@@ -20,6 +20,7 @@
       <span class="nav-username"><%= username %></span>
       <a href="/watchlist" class="nav-logout <%= currentPath === '/watchlist' ? 'active' : '' %>">◈ Watchlist</a>
       <a href="/admin" class="nav-logout">Admin</a>
+      <button class="nav-info-btn" id="nav-info-btn" aria-label="About Diskovarr">ℹ</button>
       <a href="/auth/logout" class="nav-logout">Sign out</a>
     </div>
 
@@ -47,10 +48,38 @@
   </div>
   <a href="/watchlist" class="nav-fab-menu-link">◈ Watchlist</a>
   <a href="/admin" class="nav-fab-menu-link">⚙ Admin</a>
+  <button class="nav-fab-menu-link nav-fab-menu-info" id="nav-info-btn-mobile">ℹ About</button>
   <a href="/auth/logout" class="nav-fab-menu-link nav-fab-menu-signout">Sign out</a>
 </div>
 
 <div class="nav-overlay" id="nav-overlay"></div>
+
+<!-- Info modal -->
+<div class="info-modal-backdrop" id="info-modal" aria-hidden="true">
+  <div class="info-modal-card" role="dialog" aria-modal="true">
+    <button class="info-modal-close" id="info-modal-close" aria-label="Close">✕</button>
+    <div class="info-modal-logo">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">diskovarr</span>
+      <span class="info-modal-version">v1.0.0</span>
+    </div>
+    <p class="info-modal-tagline">Personalized Plex recommendations based on your watch history.</p>
+    <div class="info-modal-sections">
+      <div class="info-modal-section">
+        <div class="info-modal-section-title">🏠 Home</div>
+        <p>Your personalized recommendation feed. Diskovarr analyzes your Plex watch history — directors, actors, studios, and genres you enjoy — to surface content you haven't seen yet. Dismiss anything you're not interested in and it won't appear again.</p>
+      </div>
+      <div class="info-modal-section">
+        <div class="info-modal-section-title">🔍 Diskovarr View</div>
+        <p>Browse the full library with filters for type (movies, TV, anime), genre, decade, and minimum rating. Sort by recommendation score, rating, year, or recently added.</p>
+      </div>
+      <div class="info-modal-section">
+        <div class="info-modal-section-title">◈ Watchlist</div>
+        <p>Save anything you want to watch later. Adding an item creates a <strong>Diskovarr playlist in your Plex app</strong> — for TV shows, the first episode is added so it appears in your Continue Watching when you start it. Remove items here or in Plex and both stay in sync.</p>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
   (function () {
@@ -78,5 +107,33 @@
       menu.classList.contains('open') ? close() : open();
     });
     overlay.addEventListener('click', close);
+  })();
+
+  // Info modal
+  (function () {
+    var modal = document.getElementById('info-modal');
+    var overlay = document.getElementById('nav-overlay');
+
+    function openInfo() {
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      overlay.classList.add('open');
+      // Close FAB menu if open
+      var menu = document.getElementById('nav-fab-menu');
+      if (menu) { menu.classList.remove('open'); document.getElementById('nav-fab').classList.remove('open'); }
+    }
+    function closeInfo() {
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+      overlay.classList.remove('open');
+    }
+
+    ['nav-info-btn', 'nav-info-btn-mobile'].forEach(function (id) {
+      var btn = document.getElementById(id);
+      if (btn) btn.addEventListener('click', openInfo);
+    });
+    document.getElementById('info-modal-close').addEventListener('click', closeInfo);
+    overlay.addEventListener('click', closeInfo);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeInfo(); });
   })();
 </script>
