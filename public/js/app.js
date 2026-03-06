@@ -224,7 +224,7 @@
     const wlBtn = document.createElement('button');
     wlBtn.className = 'btn-icon btn-watchlist' + (item.isInWatchlist ? ' in-watchlist' : '');
     wlBtn.textContent = item.isInWatchlist ? '✓ In Watchlist' : '+ Watchlist';
-    wlBtn.title = item.isInWatchlist ? 'Remove from Watchlist' : 'Add to Diskovarr Watchlist';
+    wlBtn.title = item.isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist';
     wlBtn.addEventListener('click', function (e) {
       e.stopPropagation();
       window.Watchlist.toggle(wlBtn, item);
@@ -324,28 +324,64 @@
   }
 
   // ----------------------------------------------------------------
-  // Render section
+  // Carousel renderer
   // ----------------------------------------------------------------
 
-  function renderSection(gridId, items) {
-    const grid = document.getElementById(gridId);
-    if (!grid) return;
+  function renderCarousel(sectionId, items) {
+    const section = document.getElementById('section-' + sectionId);
+    const grid = document.getElementById('grid-' + sectionId);
+    if (!grid || !section) return;
 
-    // Clear skeleton
     grid.innerHTML = '';
     grid.classList.remove('skeleton-grid');
 
     if (!items || items.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'empty-state';
-      empty.textContent = 'No recommendations found yet. Watch some content and check back!';
-      grid.appendChild(empty);
+      grid.innerHTML = '<div class="empty-state">No recommendations found yet. Watch some content and check back!</div>';
       return;
     }
 
-    const fragment = document.createDocumentFragment();
-    items.forEach(item => fragment.appendChild(renderCard(item)));
-    grid.appendChild(fragment);
+    // Probe column count by briefly rendering one card
+    const probe = renderCard(items[0]);
+    grid.appendChild(probe);
+    const cols = window.getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+    grid.innerHTML = '';
+
+    const pageSize = Math.max(cols * 2, 4);
+    const pages = [];
+    for (let i = 0; i < items.length; i += pageSize) {
+      pages.push(items.slice(i, i + pageSize));
+    }
+
+    const btnPrev = section.querySelector('.carousel-btn-prev');
+    const btnNext = section.querySelector('.carousel-btn-next');
+    const counter = section.querySelector('.carousel-counter');
+    let currentPage = 0;
+
+    function showPage(p) {
+      grid.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      pages[p].forEach(item => frag.appendChild(renderCard(item)));
+      grid.appendChild(frag);
+      currentPage = p;
+      if (pages.length > 1) {
+        counter.textContent = p + 1 + ' / ' + pages.length;
+        btnPrev.disabled = p === 0;
+        btnNext.disabled = p === pages.length - 1;
+      }
+    }
+
+    if (pages.length > 1) {
+      btnPrev.hidden = false;
+      btnNext.hidden = false;
+      btnPrev.addEventListener('click', function () {
+        if (currentPage > 0) showPage(currentPage - 1);
+      });
+      btnNext.addEventListener('click', function () {
+        if (currentPage < pages.length - 1) showPage(currentPage + 1);
+      });
+    }
+
+    showPage(0);
   }
 
   // Expose renderCard globally for discover.js
@@ -369,10 +405,10 @@
       })
       .then(data => {
         if (!data) return;
-        renderSection('grid-top-picks', data.topPicks);
-        renderSection('grid-movies', data.movies);
-        renderSection('grid-tv', data.tvShows);
-        renderSection('grid-anime', data.anime);
+        renderCarousel('top-picks', data.topPicks);
+        renderCarousel('movies', data.movies);
+        renderCarousel('tv', data.tvShows);
+        renderCarousel('anime', data.anime);
       })
       .catch(err => {
         console.error('Failed to load recommendations:', err);

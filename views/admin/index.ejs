@@ -17,7 +17,7 @@
     <div class="nav-inner">
       <a href="/" class="nav-logo">
         <span class="logo-icon">◈</span>
-        <span class="logo-text">diskovarr</span>
+        <span class="logo-text">Diskovarr</span>
         <span class="admin-badge">admin</span>
       </a>
       <div class="nav-user">
@@ -166,6 +166,37 @@
           <input type="color" id="custom-color-input" title="Pick any color">
         </div>
         <button class="btn-admin btn-primary" id="btn-apply-color" onclick="applyColor()">Apply</button>
+      </div>
+    </section>
+
+    <!-- ── Watchlist Mode ──────────────────────────────────────────── -->
+    <section class="admin-section">
+      <div class="admin-section-header">
+        <h2 class="section-title">Watchlist Mode</h2>
+        <div class="status-badge <%= watchlistMode === 'playlist' ? 'status-syncing' : 'status-idle' %>" style="font-size:0.78rem;padding:4px 10px">
+          <span><%= watchlistMode === 'playlist' ? 'Playlist' : 'Watchlist' %></span>
+        </div>
+      </div>
+      <p class="section-desc" style="margin-bottom:20px">
+        Controls how <strong>your account</strong> (the server owner) syncs watchlist items to Plex.
+        This setting does <strong>not</strong> affect other users — they always sync to the native Plex.tv Watchlist.
+      </p>
+      <div class="admin-grid" style="margin-bottom:20px">
+        <div class="stat-card">
+          <div class="stat-label">Watchlist mode</div>
+          <div class="stat-value" style="font-size:1.1rem">Plex.tv Watchlist</div>
+          <div class="stat-sub">Items appear in the Plex app under Discover → Watchlist. Default for new installs.</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Playlist mode</div>
+          <div class="stat-value" style="font-size:1.1rem">Server Playlist</div>
+          <div class="stat-sub">Items go into a private "Diskovarr" server playlist. Use this if your native Plex Watchlist is monitored by download automation (e.g. pd_zurg).</div>
+        </div>
+      </div>
+      <div class="admin-actions">
+        <button class="btn-admin btn-primary" id="btn-watchlist-mode" data-mode="<%= watchlistMode %>">
+          <span id="watchlist-mode-btn-text"><%= watchlistMode === 'playlist' ? '▶ Switch to Watchlist mode' : '▶ Switch to Playlist mode' %></span>
+        </button>
       </div>
     </section>
 
@@ -437,6 +468,24 @@
     }
 
     initColorPicker();
+
+    // ── Watchlist mode toggle ─────────────────────────────────────────
+
+    document.getElementById('btn-watchlist-mode').addEventListener('click', async function () {
+      const current = this.dataset.mode;
+      const newMode = current === 'playlist' ? 'watchlist' : 'playlist';
+      const d = await fetch('/admin/settings/watchlist-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode }),
+      }).then(r => r.json());
+      if (d.success) {
+        showToast('Watchlist mode set to: ' + newMode);
+        window.location.reload();
+      } else {
+        showToast(d.error || 'Failed to update watchlist mode', true);
+      }
+    });
   </script>
 </body>
 </html>

@@ -67,6 +67,7 @@ router.get('/', requireAdmin, (req, res) => {
     autoSyncEnabled,
     syncInProgress,
     lastSyncError,
+    watchlistMode: db.getAdminWatchlistMode(),
     themeParam: encodeURIComponent(db.getThemeColor()),
   });
 });
@@ -75,7 +76,7 @@ router.get('/', requireAdmin, (req, res) => {
 
 router.get('/status', requireAdmin, (req, res) => {
   const stats = db.getAdminStats();
-  res.json({ stats, autoSyncEnabled, syncInProgress, lastSyncError });
+  res.json({ stats, autoSyncEnabled, syncInProgress, lastSyncError, watchlistMode: db.getAdminWatchlistMode() });
 });
 
 // ── Library sync controls ─────────────────────────────────────────────────────
@@ -161,6 +162,21 @@ router.post('/theme/color', requireAdmin, (req, res) => {
 
 router.get('/theme/color', (req, res) => {
   res.json({ color: db.getThemeColor() });
+});
+
+// ── Watchlist mode ─────────────────────────────────────────────────────────────
+
+router.get('/settings/watchlist-mode', requireAdmin, (req, res) => {
+  res.json({ mode: db.getAdminWatchlistMode() });
+});
+
+router.post('/settings/watchlist-mode', requireAdmin, (req, res) => {
+  const { mode } = req.body;
+  if (mode !== 'watchlist' && mode !== 'playlist') {
+    return res.status(400).json({ error: 'Invalid mode — must be "watchlist" or "playlist"' });
+  }
+  db.setAdminWatchlistMode(mode);
+  res.json({ success: true, mode });
 });
 
 // ── Cache operations ──────────────────────────────────────────────────────────

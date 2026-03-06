@@ -38,9 +38,12 @@ Browser
 
 Diskovarr uses Plex's PIN-based OAuth, which avoids storing user passwords and works with any Plex account (not just the server owner).
 
-1. `GET /auth/plex` — server POSTs to `https://plex.tv/api/v2/pins` and receives a PIN code and ID. The PIN ID is stored in the session. The user is redirected to `https://app.plex.tv/auth#?clientID=DISKOVARR&code={pinCode}`.
-2. `GET /auth/callback` — renders a polling page with a spinner.
-3. `GET /auth/check-pin` — polled every 2 seconds by the browser. Server GETs `https://plex.tv/api/v2/pins/{pinId}`. When `authToken` appears, the server fetches user info and resources from plex.tv to verify the user has access to the configured server, then stores `{ id, username, thumb, token }` in the session.
+1. **Login page** — the browser directly POSTs to `https://plex.tv/api/v2/pins` to create a PIN (client-side, so Plex records the user's IP rather than the server's). The browser then redirects to `https://app.plex.tv/auth#?clientID=DISKOVARR&code={pinCode}&forwardUrl=...`.
+2. `GET /auth/callback?pinId=X&pinCode=Y` — Plex redirects here after the user authenticates. The PIN ID and code are saved to the session; a polling page with a spinner is rendered.
+3. `GET /auth/check-pin` — polled every 2 seconds by the browser. Server GETs `https://plex.tv/api/v2/pins/{pinId}`. When `authToken` appears, the server:
+   - Fetches user info from `https://plex.tv/api/v2/user`
+   - Fetches resources from `https://plex.tv/api/v2/resources` to verify the user has access to the configured server and to obtain the server-specific `accessToken`
+   - Stores `{ id, username, thumb, token, serverToken }` in the session
 4. `GET /auth/logout` — destroys the session and redirects to `/login`.
 
 Sessions are stored in a SQLite file (`data/sessions.db`) via `connect-sqlite3`, with a 30-day cookie lifetime.
@@ -169,15 +172,25 @@ Filtering and sorting are applied server-side on the cached library data. Result
 
 ---
 
-## Watchlist (Plex Playlist)
+## Watchlist
 
-The watchlist is stored as a Plex playlist named **"Diskovarr"** on the user's account.
+Diskovarr maintains a per-user watchlist stored locally in SQLite and synced to Plex in one of two modes.
 
-- **Add**: `POST /api/watchlist/add { ratingKey }` — creates the playlist if it doesn't exist, otherwise appends to it via `PUT /playlists/{id}/items`
-- **Remove**: `POST /api/watchlist/remove { playlistId, playlistItemId }` — `DELETE /playlists/{id}/items/{itemId}`
-- **Read**: `GET /api/watchlist` — fetches all playlists, finds "Diskovarr", returns item list
+### Sync modes
 
-The playlist uses the user's personal Plex token, so it appears only on their account. It is completely separate from the Plex "Watchlist" feature (which can trigger download automation in setups using `pd_zurg` or similar).
+**Watchlist mode** (default for all users):
+Items are synced to the user's native Plex.tv Watchlist via the Plex Discover API (`PUT https://discover.provider.plex.tv/actions/addToWatchlist?ratingKey={guid}`). The GUID is resolved from the item's `plex://` metadata URI. Items appear in the Plex app under Discover → Watchlist. This works for the server owner and all Friend accounts.
+
+**Playlist mode** (server owner only, opt-in via admin panel):
+Items are synced to a private server playlist named "Diskovarr" on the owner's account. Used when the native Plex Watchlist is monitored by download automation (e.g. `pd_zurg`). Only the server owner's token has write access to server playlists; Friend users always fall back to Watchlist mode regardless of this setting.
+
+### API
+
+- **Add**: `POST /api/watchlist/add { ratingKey }` — saves to local DB; async Plex sync in background
+- **Remove**: `POST /api/watchlist/remove { ratingKey }` — removes from local DB; async Plex sync in background
+- **Read**: `GET /api/watchlist` — returns local DB watchlist (instant, no Plex API call)
+
+Plex IDs (`plex_playlist_id`, `plex_item_id` for playlist mode; `plex_guid` for watchlist mode) are stored in the `watchlist` table after the async sync completes, so subsequent removes can be performed without re-querying Plex.
 
 A toast notification slides up from the bottom of the screen when an item is added.
 
@@ -212,6 +225,12 @@ Password-protected (compared with `crypto.timingSafeEqual` to prevent timing att
 **Recommendation Cache**
 - "Clear All Caches" — wipes in-memory recommendation cache for all users
 - Per-user cache clear
+
+**Watchlist Mode**
+- Toggles the server owner's sync target between `watchlist` (plex.tv native Watchlist) and `playlist` (private server playlist)
+- Persisted in the `settings` table as key `admin_watchlist_mode`; default is `watchlist`
+- `POST /admin/settings/watchlist-mode { mode }` — sets the mode
+- Does not affect Friend users, who always sync to plex.tv Watchlist
 
 **Theme Color**
 - 8 preset swatches (gold, red, blue, green, purple, pink, teal, orange)

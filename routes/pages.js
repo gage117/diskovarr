@@ -36,7 +36,8 @@ router.get('/login', (req, res) => {
     return res.redirect('/');
   }
   const error = req.query.error || null;
-  res.render('login', { error });
+  const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  res.render('login', { error, appUrl });
 });
 
 function themeParam() {

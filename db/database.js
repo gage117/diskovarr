@@ -292,6 +292,7 @@ db.exec(`
 // Migrate: add plex columns if this is an existing watchlist table
 ['ALTER TABLE watchlist ADD COLUMN plex_playlist_id TEXT',
  'ALTER TABLE watchlist ADD COLUMN plex_item_id TEXT',
+ 'ALTER TABLE watchlist ADD COLUMN plex_guid TEXT',
 ].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
 function addToWatchlistDb(userId, ratingKey) {
@@ -315,8 +316,13 @@ function updateWatchlistPlexIds(userId, ratingKey, plexPlaylistId, plexItemId) {
 }
 
 function getWatchlistPlexIds(userId, ratingKey) {
-  return db.prepare('SELECT plex_playlist_id, plex_item_id FROM watchlist WHERE user_id = ? AND rating_key = ?')
+  return db.prepare('SELECT plex_playlist_id, plex_item_id, plex_guid FROM watchlist WHERE user_id = ? AND rating_key = ?')
     .get(String(userId), String(ratingKey));
+}
+
+function updateWatchlistPlexGuid(userId, ratingKey, plexGuid) {
+  db.prepare('UPDATE watchlist SET plex_guid = ? WHERE user_id = ? AND rating_key = ?')
+    .run(plexGuid, String(userId), String(ratingKey));
 }
 
 // ── User ratings (Plex star ratings) ─────────────────────────────────────────
@@ -349,10 +355,25 @@ function setThemeColor(hex) {
     .run(hex);
 }
 
+// ── Watchlist mode (admin only) ───────────────────────────────────────────────
+// 'watchlist' = sync to plex.tv Watchlist (default, works for all accounts)
+// 'playlist'  = sync to a private server playlist (for use with pd_zurg etc.)
+// Only applies to the server owner (admin); Friends always use plex.tv Watchlist.
+
+function getAdminWatchlistMode() {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'admin_watchlist_mode'").get();
+  return row ? row.value : 'watchlist';
+}
+
+function setAdminWatchlistMode(mode) {
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_watchlist_mode', ?)")
+    .run(mode);
+}
+
 module.exports = {
   addDismissal, getDismissals, removeDismissal,
   addToWatchlistDb, removeFromWatchlistDb, getWatchlistFromDb,
-  updateWatchlistPlexIds, getWatchlistPlexIds,
+  updateWatchlistPlexIds, getWatchlistPlexIds, updateWatchlistPlexGuid,
   upsertKnownUser, getKnownUsers,
   upsertManyItems, getLibraryItemsFromDb, getLibraryItemByKey,
   replaceWatchedBatch, getWatchedKeysFromDb,
@@ -361,4 +382,5 @@ module.exports = {
   getAdminStats, clearUserWatched, clearAllUserWatched,
   clearLibraryDb, clearUserDismissals,
   getThemeColor, setThemeColor,
+  getAdminWatchlistMode, setAdminWatchlistMode,
 };

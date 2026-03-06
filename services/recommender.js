@@ -274,43 +274,46 @@ function buildTopPicks(scoredMovies, scoredTV, scoredAnime, profile) {
     }
   }
 
-  // Seed: top 2 pure-score items (leaves more room for diversity slots)
+  // Seed: top 4 pure-score items
   const combined = [...scoredMovies, ...scoredTV, ...scoredAnime].sort((a, b) => b.score - a.score);
-  for (const item of combined.slice(0, 2)) {
+  for (const item of combined.slice(0, 4)) {
     if (!used.has(item.ratingKey)) { picks.push(item); used.add(item.ratingKey); }
   }
 
-  // Director diversity: best item per top-3 directors in profile
-  const topDirs = [...profile.directorWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  // Director diversity: best 2 items per top-6 directors in profile
+  const topDirs = [...profile.directorWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   for (const [dir] of topDirs) {
     const t = profile.directorTriggers.get(dir);
     const reason = (t?.isHighlyRated) ? `Because you loved ${t.title}` : `Directed by ${dir}`;
     tryAdd(combined, i => i.directors.includes(dir), reason);
+    tryAdd(combined, i => i.directors.includes(dir), reason);
   }
 
-  // Actor diversity: best item per top-3 actors
-  const topActors = [...profile.actorWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  // Actor diversity: best 2 items per top-6 actors
+  const topActors = [...profile.actorWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   for (const [actor] of topActors) {
     const t = profile.actorTriggers.get(actor);
     const reason = (t?.isHighlyRated) ? `Because you loved ${t.title}` : `Starring ${actor}`;
     tryAdd(combined, i => i.cast.includes(actor), reason);
+    tryAdd(combined, i => i.cast.includes(actor), reason);
   }
 
-  // Studio diversity: best item from top-2 studios
-  const topStudios = [...profile.studioWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2);
+  // Studio diversity: best 2 items from top-4 studios
+  const topStudios = [...profile.studioWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
   for (const [studio] of topStudios) {
     const t = profile.studioTriggers.get(studio);
     const reason = (t?.isHighlyRated) ? `Because you loved ${t.title}` : `More from ${studio}`;
     tryAdd(combined, i => i.studio === studio, reason);
+    tryAdd(combined, i => i.studio === studio, reason);
   }
 
-  // Fill remainder from top of each pool in order
+  // Fill remainder from top of scored pool
   for (const item of combined) {
-    if (picks.length >= 12) break;
+    if (picks.length >= 72) break;
     if (!used.has(item.ratingKey)) { picks.push(item); used.add(item.ratingKey); }
   }
 
-  return picks.sort((a, b) => b.score - a.score).slice(0, 12);
+  return picks.sort((a, b) => b.score - a.score).slice(0, 72);
 }
 
 async function getRecommendations(userId, userToken) {
@@ -368,14 +371,14 @@ async function getRecommendations(userId, userToken) {
   // Top Picks: diversity-injected blend
   const topPicks = profile
     ? buildTopPicks(scoredMovies, scoredTV, scoredAnime, profile)
-    : [...scoredMovies.slice(0, 5), ...scoredTV.slice(0, 4), ...scoredAnime.slice(0, 3)]
-        .sort((a, b) => b.score - a.score).slice(0, 12);
+    : [...scoredMovies.slice(0, 15), ...scoredTV.slice(0, 12), ...scoredAnime.slice(0, 9)]
+        .sort((a, b) => b.score - a.score).slice(0, 36);
 
   const result = {
     topPicks,
-    movies: scoredMovies.slice(0, 30),
-    tvShows: scoredTV.slice(0, 30),
-    anime: scoredAnime.slice(0, 30),
+    movies: scoredMovies.slice(0, 60),
+    tvShows: scoredTV.slice(0, 60),
+    anime: scoredAnime.slice(0, 60),
   };
 
   recCache.set(userIdStr, { data: result, builtAt: Date.now() });

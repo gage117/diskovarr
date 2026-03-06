@@ -13,39 +13,13 @@ const PLEX_TV_HEADERS = {
   'X-Plex-Platform': 'Web',
 };
 
-// GET /auth/plex — initiate OAuth
-router.get('/plex', async (req, res) => {
-  try {
-    const pinRes = await fetch('https://plex.tv/api/v2/pins', {
-      method: 'POST',
-      headers: {
-        ...PLEX_TV_HEADERS,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'strong=true',
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!pinRes.ok) throw new Error(`Plex pin request failed: ${pinRes.status}`);
-    const pinData = await pinRes.json();
-
-    req.session.plexPinId = pinData.id;
-    req.session.plexPinCode = pinData.code;
-
-    const forwardUrl = process.env.APP_URL
-      ? `${process.env.APP_URL}/auth/callback`
-      : `${req.protocol}://${req.get('host')}/auth/callback`;
-    const authUrl = `https://app.plex.tv/auth#?clientID=${PLEX_CLIENT_ID}&code=${pinData.code}&forwardUrl=${encodeURIComponent(forwardUrl)}&context%5Bdevice%5D%5Bproduct%5D=Diskovarr`;
-
-    res.redirect(authUrl);
-  } catch (err) {
-    console.error('Auth plex error:', err);
-    res.redirect('/login?error=plex_unreachable');
-  }
-});
-
-// GET /auth/callback — render polling page
+// GET /auth/callback — Plex redirects here after auth; pinId/pinCode passed as query params
 router.get('/callback', (req, res) => {
+  const { pinId, pinCode } = req.query;
+  if (pinId && pinCode) {
+    req.session.plexPinId = pinId;
+    req.session.plexPinCode = pinCode;
+  }
   res.render('poll', { layout: 'layout' });
 });
 
@@ -95,10 +69,11 @@ router.get('/check-pin', async (req, res) => {
     // Pick the best URL for this user to reach the Plex server with their own token.
     // Plex Friends' tokens are rejected on the local LAN URL — prefer the relay or
     // external connection which goes through plex.tv and always authenticates correctly.
-    const connections = serverResource.connections || [];
-    const relayConn = connections.find(c => c.relay);
-    const externalConn = connections.find(c => !c.local && !c.relay);
-    const serverUrl = (relayConn || externalConn)?.uri || null;
+    // serverToken: the resource-specific access token Plex issues for this server.
+    // This is what Plex apps actually use for server API calls (not the main OAuth token).
+    // Without it, Friend tokens are rejected by the server for write operations like playlists.
+    const serverToken = serverResource.accessToken || userToken;
+    console.log(`[auth] user ${userData.id} serverToken=${serverToken ? 'found' : 'missing (fallback to userToken)'}`);
 
     const username = userData.username || userData.friendlyName || 'Plex User';
     const thumb = userData.thumb || null;
@@ -112,8 +87,8 @@ router.get('/check-pin', async (req, res) => {
       uuid: userData.uuid,
       username,
       thumb,
-      token: userToken, // user's personal token, never sent to browser
-      serverUrl,        // relay/external URL for user-token API calls; null = use local
+      token: userToken,       // plex.tv OAuth token — used for plex.tv API calls & watch sync
+      serverToken,            // server-specific access token — used for playlist operations
     };
 
     delete req.session.plexPinId;

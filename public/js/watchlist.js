@@ -52,14 +52,14 @@ window.Watchlist = (function () {
         item.isInWatchlist = false;
         btn.classList.remove('in-watchlist');
         btn.textContent = '+ Watchlist';
-        btn.title = 'Add to Diskovarr Watchlist';
+        btn.title = 'Add to Watchlist';
       } else {
         await add(item.ratingKey);
         item.isInWatchlist = true;
         btn.classList.add('in-watchlist');
         btn.textContent = '✓ In Watchlist';
-        btn.title = 'Remove from Diskovarr Watchlist';
-        showToast('Added to your Diskovarr watchlist ◈', 'add');
+        btn.title = 'Remove from Watchlist';
+        showToast('Added to Watchlist ◈', 'add');
       }
     } catch (err) {
       console.error('Watchlist toggle error:', err);

@@ -22,7 +22,7 @@
     <div class="login-card">
       <div class="login-logo">
         <span class="logo-icon">◈</span>
-        <span class="logo-text">diskovarr</span>
+        <span class="logo-text">Diskovarr</span>
       </div>
       <p class="login-tagline">Your Plex. Personalized.</p>
       <p class="login-description">
@@ -35,12 +35,50 @@
         <div class="error-banner">Your account doesn't have access to this Plex server.</div>
       <% } %>
 
-      <a href="/auth/plex" class="btn-plex">
+      <button id="btn-plex" class="btn-plex" onclick="signInWithPlex()">
         <svg class="plex-icon" viewBox="0 0 24 24" fill="currentColor">
           <path d="M11.97 0C5.356 0 0 5.357 0 11.97c0 6.615 5.357 11.97 11.97 11.97 6.614 0 11.97-5.356 11.97-11.97C23.94 5.356 18.583 0 11.97 0zm.581 17.725H9.847V6.275h2.704l4.597 7.096V6.275h2.704v11.45h-2.704l-4.597-7.097v7.097z"/>
         </svg>
-        Sign in with Plex
-      </a>
+        <span id="btn-plex-label">Sign in with Plex</span>
+      </button>
+
+      <script>
+        async function signInWithPlex() {
+          var btn = document.getElementById('btn-plex');
+          var label = document.getElementById('btn-plex-label');
+          btn.disabled = true;
+          label.textContent = 'Connecting...';
+
+          try {
+            var res = await fetch('https://plex.tv/api/v2/pins', {
+              method: 'POST',
+              headers: {
+                'Accept': 'application/json',
+                'X-Plex-Client-Identifier': 'diskovarr-app',
+                'X-Plex-Product': 'Diskovarr',
+                'X-Plex-Version': '1.0.0',
+                'X-Plex-Platform': 'Web',
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: 'strong=true',
+            });
+
+            if (!res.ok) throw new Error('PIN creation failed');
+            var pin = await res.json();
+
+            var forwardUrl = '<%= appUrl %>/auth/callback?pinId=' + pin.id + '&pinCode=' + encodeURIComponent(pin.code);
+            var authUrl = 'https://app.plex.tv/auth#?clientID=diskovarr-app&code=' + pin.code
+              + '&forwardUrl=' + encodeURIComponent(forwardUrl)
+              + '&context%5Bdevice%5D%5Bproduct%5D=Diskovarr';
+
+            window.location.href = authUrl;
+          } catch (err) {
+            btn.disabled = false;
+            label.textContent = 'Sign in with Plex';
+            alert('Could not reach Plex. Please try again.');
+          }
+        }
+      </script>
 
       <p class="login-footer">
         Recommendations are built from your personal watch history.<br>

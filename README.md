@@ -12,7 +12,7 @@ Sign in with your Plex account and Diskovarr surfaces what to watch next — sco
 - **Personalized recommendations** — scored from Tautulli watch history across genre, director, cast, decade, and rating
 - **Four sections** — Top Picks, Movies, TV Shows, Anime (auto-detected by genre tag)
 - **Diskovarr View** — full library browser with filters for type, decade, genre, min rating, sort order, and watched status
-- **Diskovarr playlist** — private Plex playlist ("Diskovarr") separate from the Plex watchlist, so adding items here does not trigger any download automation
+- **Watchlist sync** — items added to your Diskovarr watchlist are synced to Plex. By default (and for all Friend users), items sync to the native Plex.tv Watchlist (visible in the Plex app under Discover → Watchlist). Server owners can switch to **Playlist mode** in the admin panel, which instead creates a private "Diskovarr" server playlist — useful when the native Plex Watchlist is monitored by download automation (e.g. pd_zurg)
 - **Dismiss** — hide individual items permanently; stored in SQLite per user
 - **Background library sync** — library is cached in SQLite and refreshed from Plex every 2 hours; no cold-start timeouts
 - **Per-user watched sync** — watched status pulled directly from Plex via admin token + accountID; catches fully-watched movies, fully-watched TV shows, and in-progress content via onDeck; syncs on first request then refreshes in background every 30 minutes
@@ -130,6 +130,7 @@ Visit `/admin` and enter the `ADMIN_PASSWORD` from your `.env`.
 - **Library Sync** — view item counts and last sync time; trigger a manual full sync; enable or disable the 2-hour auto-sync
 - **User Watch Sync** — see watched counts per user; re-sync or clear individual users' watched history
 - **Recommendation Cache** — clear the in-memory recommendation cache for all users or a specific user
+- **Watchlist Mode** — toggle between Watchlist mode (plex.tv native Watchlist, default) and Playlist mode (private server playlist) for the server owner's account only
 - **Theme Color** — pick from presets or use the color wheel; the change applies immediately across all pages
 
 ## How Recommendations Work

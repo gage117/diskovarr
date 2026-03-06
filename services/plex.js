@@ -4,6 +4,7 @@ const tautulliService = require('./tautulli');
 const PLEX_URL = process.env.PLEX_URL;
 const PLEX_TOKEN = process.env.PLEX_TOKEN;
 const PLEX_SERVER_ID = process.env.PLEX_SERVER_ID;
+
 const MOVIES_SECTION = process.env.PLEX_MOVIES_SECTION_ID || '1';
 const TV_SECTION = process.env.PLEX_TV_SECTION_ID || '2';
 
@@ -20,6 +21,10 @@ const libSyncInProgress = new Map();
 
 const PLEX_HEADERS = {
   'Accept': 'application/json',
+  'X-Plex-Client-Identifier': 'diskovarr-app',
+  'X-Plex-Product': 'Diskovarr',
+  'X-Plex-Version': '1.0.0',
+  'X-Plex-Platform': 'Web',
   'X-Plex-Token': PLEX_TOKEN,
 };
 
@@ -258,12 +263,13 @@ async function getLibraryMap() {
 }
 
 // Watchlist / Playlist management
-// serverUrl: relay/external URL stored in session for this user; falls back to PLEX_URL
-async function getDiskovarrPlaylist(userToken, serverUrl) {
-  const base = serverUrl || PLEX_URL;
+// Always uses local PLEX_URL — the server validates Friend tokens against plex.tv locally.
+// Relay URLs are for external clients reaching the server, not server-to-server calls.
+async function getDiskovarrPlaylist(userToken) {
+  const base = PLEX_URL;
   try {
     const res = await fetch(`${base}/playlists/all?playlistType=video&X-Plex-Token=${userToken}`, {
-      headers: { Accept: 'application/json' },
+      headers: { ...PLEX_HEADERS, 'X-Plex-Token': userToken },
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) throw new Error(`Plex API error ${res.status}`);
@@ -274,7 +280,7 @@ async function getDiskovarrPlaylist(userToken, serverUrl) {
     if (!playlist) return null;
 
     const itemsRes = await fetch(`${base}/playlists/${playlist.ratingKey}/items?X-Plex-Token=${userToken}`, {
-      headers: { Accept: 'application/json' },
+      headers: { ...PLEX_HEADERS, 'X-Plex-Token': userToken },
       signal: AbortSignal.timeout(15000),
     });
     if (!itemsRes.ok) throw new Error(`Plex API error ${itemsRes.status}`);
@@ -294,8 +300,8 @@ async function getDiskovarrPlaylist(userToken, serverUrl) {
   }
 }
 
-async function getWatchlist(userToken, serverUrl) {
-  const playlist = await getDiskovarrPlaylist(userToken, serverUrl);
+async function getWatchlist(userToken) {
+  const playlist = await getDiskovarrPlaylist(userToken);
   return playlist || { playlistId: null, items: [] };
 }
 
@@ -322,9 +328,9 @@ async function resolvePlaylistKey(ratingKey) {
   }
 }
 
-async function addToWatchlist(userToken, ratingKey, serverUrl) {
-  const base = serverUrl || PLEX_URL;
-  const existing = await getDiskovarrPlaylist(userToken, serverUrl);
+async function addToWatchlist(userToken, ratingKey) {
+  const base = PLEX_URL;
+  const existing = await getDiskovarrPlaylist(userToken);
   // For shows, use first episode so Plex doesn't expand the entire series
   const playlistKey = await resolvePlaylistKey(ratingKey);
   const uri = `server://${PLEX_SERVER_ID}/com.plexapp.plugins.library/library/metadata/${playlistKey}`;
@@ -333,7 +339,7 @@ async function addToWatchlist(userToken, ratingKey, serverUrl) {
     const createUrl = `${base}/playlists?type=video&title=Diskovarr&smart=0&uri=${encodeURIComponent(uri)}&X-Plex-Token=${userToken}`;
     const res = await fetch(createUrl, {
       method: 'POST',
-      headers: { Accept: 'application/json' },
+      headers: { ...PLEX_HEADERS, 'X-Plex-Token': userToken },
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) throw new Error(`Failed to create playlist: ${res.status}`);
@@ -343,19 +349,19 @@ async function addToWatchlist(userToken, ratingKey, serverUrl) {
   const putUrl = `${base}/playlists/${existing.playlistId}/items?uri=${encodeURIComponent(uri)}&X-Plex-Token=${userToken}`;
   const res = await fetch(putUrl, {
     method: 'PUT',
-    headers: { Accept: 'application/json' },
+    headers: { ...PLEX_HEADERS, 'X-Plex-Token': userToken },
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`Failed to add to playlist: ${res.status}`);
   return res.json();
 }
 
-async function removeFromWatchlist(userToken, playlistId, playlistItemId, serverUrl) {
-  const base = serverUrl || PLEX_URL;
+async function removeFromWatchlist(userToken, playlistId, playlistItemId) {
+  const base = PLEX_URL;
   const url = `${base}/playlists/${playlistId}/items/${playlistItemId}?X-Plex-Token=${userToken}`;
   const res = await fetch(url, {
     method: 'DELETE',
-    headers: { Accept: 'application/json' },
+    headers: { ...PLEX_HEADERS, 'X-Plex-Token': userToken },
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`Failed to remove from playlist: ${res.status}`);
@@ -364,6 +370,60 @@ async function removeFromWatchlist(userToken, playlistId, playlistItemId, server
 
 function getDeepLink(ratingKey) {
   return `https://app.plex.tv/desktop#!/server/${PLEX_SERVER_ID}/details?key=/library/metadata/${ratingKey}`;
+}
+
+/**
+ * Fetch the plex:// GUID for a server item (e.g. "plex://movie/5d7768ba...").
+ * Returns the hash portion needed for plex.tv Watchlist API calls.
+ */
+async function getPlexGuid(ratingKey) {
+  try {
+    const res = await fetch(`${PLEX_URL}/library/metadata/${ratingKey}?X-Plex-Token=${PLEX_TOKEN}`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const item = json.MediaContainer?.Metadata?.[0];
+    const guid = item?.guid || '';
+    // guid looks like "plex://movie/5d7768ba96b655001fdc0b35" — extract hash
+    const hash = guid.split('/').pop();
+    return hash || null;
+  } catch (err) {
+    console.warn('[plexGuid] fetch error:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Add an item to the user's plex.tv Watchlist (Discover → Watchlist in Plex app).
+ * Uses plex.tv metadata API — works for all users including Friends.
+ * Returns the plex GUID so it can be stored for later removal.
+ */
+async function addToPlexTvWatchlist(userToken, ratingKey) {
+  const guid = await getPlexGuid(ratingKey);
+  if (!guid) throw new Error('Could not resolve plex GUID for ratingKey ' + ratingKey);
+  const res = await fetch(`https://discover.provider.plex.tv/actions/addToWatchlist?ratingKey=${guid}&X-Plex-Token=${userToken}`, {
+    method: 'PUT',
+    headers: { ...PLEX_HEADERS, 'X-Plex-Token': userToken },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`Plex.tv watchlist add failed: ${res.status}`);
+  return guid;
+}
+
+/**
+ * Remove an item from the user's plex.tv Watchlist.
+ */
+async function removeFromPlexTvWatchlist(userToken, plexGuid) {
+  if (!plexGuid) throw new Error('No plex GUID stored for this item');
+  const res = await fetch(`https://discover.provider.plex.tv/actions/removeFromWatchlist?ratingKey=${plexGuid}&X-Plex-Token=${userToken}`, {
+    method: 'PUT',
+    headers: { ...PLEX_HEADERS, 'X-Plex-Token': userToken },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`Plex.tv watchlist remove failed: ${res.status}`);
+  return true;
 }
 
 module.exports = {
@@ -377,6 +437,8 @@ module.exports = {
   getWatchlist,
   addToWatchlist,
   removeFromWatchlist,
+  addToPlexTvWatchlist,
+  removeFromPlexTvWatchlist,
   resolvePlaylistKey,
   getDeepLink,
   PLEX_URL,

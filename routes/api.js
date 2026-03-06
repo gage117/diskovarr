@@ -60,23 +60,36 @@ router.post('/watchlist/add', (req, res) => {
   if (!ratingKey) return res.status(400).json({ error: 'ratingKey required' });
   if (!/^\d+$/.test(String(ratingKey))) return res.status(400).json({ error: 'Invalid ratingKey' });
 
-  const { id: userId, token: userToken, serverUrl } = req.session.plexUser;
+  const { id: userId, token: userToken, serverToken } = req.session.plexUser;
+  const isAdmin = userToken === plexService.PLEX_TOKEN;
+  const usePlaylist = isAdmin && db.getAdminWatchlistMode() === 'playlist';
   db.addToWatchlistDb(userId, ratingKey);
   res.json({ success: true });
 
-  // Async: also sync to Plex playlist (fire and forget — DB is source of truth)
-  plexService.addToWatchlist(userToken, String(ratingKey), serverUrl)
-    .then(() => Promise.all([
-      plexService.getWatchlist(userToken, serverUrl),
-      plexService.resolvePlaylistKey(String(ratingKey)),
-    ]))
-    .then(([playlist, playlistKey]) => {
-      if (!playlist.playlistId) return;
-      // Match by the episode/movie key that was actually added (shows use first episode)
-      const item = playlist.items.find(i => i.ratingKey === playlistKey);
-      if (item) db.updateWatchlistPlexIds(userId, ratingKey, playlist.playlistId, item.playlistItemId);
-    })
-    .catch(err => console.warn(`Plex playlist add failed for user ${userId}:`, err.message));
+  if (usePlaylist) {
+    // Admin: sync to server playlist (needed for pd_zurg watchlist monitoring)
+    const plexToken = serverToken || userToken;
+    plexService.addToWatchlist(plexToken, String(ratingKey))
+      .then(() => Promise.all([
+        plexService.getWatchlist(plexToken),
+        plexService.resolvePlaylistKey(String(ratingKey)),
+      ]))
+      .then(([playlist, playlistKey]) => {
+        if (!playlist.playlistId) return;
+        const item = playlist.items.find(i => i.ratingKey === playlistKey);
+        if (item) db.updateWatchlistPlexIds(userId, ratingKey, playlist.playlistId, item.playlistItemId);
+        console.log(`Plex playlist synced for user ${userId}: added ratingKey ${ratingKey}`);
+      })
+      .catch(err => console.warn(`Plex playlist add failed for user ${userId}:`, err.message));
+  } else {
+    // All other users (and admin in watchlist mode): add to plex.tv Watchlist
+    plexService.addToPlexTvWatchlist(userToken, String(ratingKey))
+      .then(guid => {
+        db.updateWatchlistPlexGuid(userId, ratingKey, guid);
+        console.log(`Plex.tv watchlist synced for user ${userId}: added ratingKey ${ratingKey} (guid ${guid})`);
+      })
+      .catch(err => console.warn(`Plex.tv watchlist add failed for user ${userId}:`, err.message));
+  }
 });
 
 // POST /api/watchlist/remove
@@ -85,28 +98,36 @@ router.post('/watchlist/remove', (req, res) => {
   if (!ratingKey) return res.status(400).json({ error: 'ratingKey required' });
   if (!/^\d+$/.test(String(ratingKey))) return res.status(400).json({ error: 'Invalid ratingKey' });
 
-  const { id: userId, token: userToken, serverUrl } = req.session.plexUser;
+  const { id: userId, token: userToken, serverToken } = req.session.plexUser;
+  const isAdmin = userToken === plexService.PLEX_TOKEN;
+  const usePlaylist = isAdmin && db.getAdminWatchlistMode() === 'playlist';
   // Read Plex IDs before deleting the row
   const plexIds = db.getWatchlistPlexIds(userId, ratingKey);
   db.removeFromWatchlistDb(userId, ratingKey);
   res.json({ success: true });
 
-  // Async: also remove from Plex playlist using stored IDs (fire and forget)
-  if (plexIds?.plex_playlist_id && plexIds?.plex_item_id) {
-    plexService.removeFromWatchlist(userToken, plexIds.plex_playlist_id, plexIds.plex_item_id, serverUrl)
-      .catch(err => console.warn(`Plex playlist remove failed for user ${userId}:`, err.message));
+  if (usePlaylist) {
+    // Admin: remove from server playlist
+    const plexToken = serverToken || userToken;
+    if (plexIds?.plex_playlist_id && plexIds?.plex_item_id) {
+      plexService.removeFromWatchlist(plexToken, plexIds.plex_playlist_id, plexIds.plex_item_id)
+        .catch(err => console.warn(`Plex playlist remove failed for user ${userId}:`, err.message));
+    } else {
+      Promise.all([
+        plexService.getWatchlist(plexToken),
+        plexService.resolvePlaylistKey(String(ratingKey)),
+      ])
+        .then(([playlist, playlistKey]) => {
+          if (!playlist.playlistId) return;
+          const item = playlist.items.find(i => i.ratingKey === playlistKey);
+          if (item) return plexService.removeFromWatchlist(plexToken, playlist.playlistId, item.playlistItemId);
+        })
+        .catch(err => console.warn(`Plex playlist remove failed for user ${userId}:`, err.message));
+    }
   } else {
-    // No stored IDs — resolve episode key then find item in playlist
-    Promise.all([
-      plexService.getWatchlist(userToken, serverUrl),
-      plexService.resolvePlaylistKey(String(ratingKey)),
-    ])
-      .then(([playlist, playlistKey]) => {
-        if (!playlist.playlistId) return;
-        const item = playlist.items.find(i => i.ratingKey === playlistKey);
-        if (item) return plexService.removeFromWatchlist(userToken, playlist.playlistId, item.playlistItemId, serverUrl);
-      })
-      .catch(err => console.warn(`Plex playlist remove failed for user ${userId}:`, err.message));
+    // All other users (and admin in watchlist mode): remove from plex.tv Watchlist using stored guid
+    plexService.removeFromPlexTvWatchlist(userToken, plexIds?.plex_guid)
+      .catch(err => console.warn(`Plex.tv watchlist remove failed for user ${userId}:`, err.message));
   }
 });
 

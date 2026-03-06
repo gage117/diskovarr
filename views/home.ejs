@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=6">
+  <link rel="stylesheet" href="/css/style.css?v=8">
   <link rel="stylesheet" href="/theme.css?c=<%= themeParam %>">
 </head>
 <body>
@@ -31,9 +31,14 @@
       <div class="section-header">
         <h2 class="section-title">Top Picks for You</h2>
         <span class="section-badge">Personalized</span>
+        <div class="carousel-controls">
+          <button class="carousel-btn carousel-btn-prev" aria-label="Previous page" hidden>❮</button>
+          <span class="carousel-counter"></span>
+          <button class="carousel-btn carousel-btn-next" aria-label="Next page" hidden>❯</button>
+        </div>
       </div>
       <div class="card-grid skeleton-grid" id="grid-top-picks">
-        <% for(let i = 0; i < 6; i++) { %>
+        <% for(let i = 0; i < 12; i++) { %>
           <div class="card card-skeleton">
             <div class="skeleton-poster shimmer"></div>
             <div class="skeleton-info">
@@ -49,9 +54,14 @@
     <section class="section" id="section-movies">
       <div class="section-header">
         <h2 class="section-title">Movies</h2>
+        <div class="carousel-controls">
+          <button class="carousel-btn carousel-btn-prev" aria-label="Previous page" hidden>❮</button>
+          <span class="carousel-counter"></span>
+          <button class="carousel-btn carousel-btn-next" aria-label="Next page" hidden>❯</button>
+        </div>
       </div>
       <div class="card-grid skeleton-grid" id="grid-movies">
-        <% for(let i = 0; i < 6; i++) { %>
+        <% for(let i = 0; i < 12; i++) { %>
           <div class="card card-skeleton">
             <div class="skeleton-poster shimmer"></div>
             <div class="skeleton-info">
@@ -67,9 +77,14 @@
     <section class="section" id="section-tv">
       <div class="section-header">
         <h2 class="section-title">TV Shows</h2>
+        <div class="carousel-controls">
+          <button class="carousel-btn carousel-btn-prev" aria-label="Previous page" hidden>❮</button>
+          <span class="carousel-counter"></span>
+          <button class="carousel-btn carousel-btn-next" aria-label="Next page" hidden>❯</button>
+        </div>
       </div>
       <div class="card-grid skeleton-grid" id="grid-tv">
-        <% for(let i = 0; i < 6; i++) { %>
+        <% for(let i = 0; i < 12; i++) { %>
           <div class="card card-skeleton">
             <div class="skeleton-poster shimmer"></div>
             <div class="skeleton-info">
@@ -85,9 +100,14 @@
     <section class="section" id="section-anime">
       <div class="section-header">
         <h2 class="section-title">Anime</h2>
+        <div class="carousel-controls">
+          <button class="carousel-btn carousel-btn-prev" aria-label="Previous page" hidden>❮</button>
+          <span class="carousel-counter"></span>
+          <button class="carousel-btn carousel-btn-next" aria-label="Next page" hidden>❯</button>
+        </div>
       </div>
       <div class="card-grid skeleton-grid" id="grid-anime">
-        <% for(let i = 0; i < 6; i++) { %>
+        <% for(let i = 0; i < 12; i++) { %>
           <div class="card card-skeleton">
             <div class="skeleton-poster shimmer"></div>
             <div class="skeleton-info">
@@ -121,7 +141,7 @@
       });
     }
   </script>
-  <script src="/js/watchlist.js?v=5"></script>
-  <script src="/js/app.js?v=5"></script>
+  <script src="/js/watchlist.js?v=6"></script>
+  <script src="/js/app.js?v=8"></script>
 </body>
 </html>
