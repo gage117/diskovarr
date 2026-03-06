@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diskovarr — Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="login-body">
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-logo">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">diskovarr</span>
+      </div>
+      <p class="login-tagline">Your Plex. Personalized.</p>
+      <p class="login-description">
+        Sign in with your Plex account to get personalized recommendations based on your watch history.
+      </p>
+
+      <% if (error === 'plex_unreachable') { %>
+        <div class="error-banner">Could not reach Plex. Please try again.</div>
+      <% } else if (error === 'no_access') { %>
+        <div class="error-banner">Your account doesn't have access to this Plex server.</div>
+      <% } %>
+
+      <a href="/auth/plex" class="btn-plex">
+        <svg class="plex-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M11.97 0C5.356 0 0 5.357 0 11.97c0 6.615 5.357 11.97 11.97 11.97 6.614 0 11.97-5.356 11.97-11.97C23.94 5.356 18.583 0 11.97 0zm.581 17.725H9.847V6.275h2.704l4.597 7.096V6.275h2.704v11.45h-2.704l-4.597-7.097v7.097z"/>
+        </svg>
+        Sign in with Plex
+      </a>
+
+      <p class="login-footer">
+        Recommendations are built from your personal watch history.<br>
+        No data is shared or stored externally.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
