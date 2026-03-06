@@ -66,10 +66,14 @@ router.post('/watchlist/add', (req, res) => {
 
   // Async: also sync to Plex playlist (fire and forget — DB is source of truth)
   plexService.addToWatchlist(userToken, String(ratingKey), serverUrl)
-    .then(() => plexService.getWatchlist(userToken, serverUrl))
-    .then(playlist => {
+    .then(() => Promise.all([
+      plexService.getWatchlist(userToken, serverUrl),
+      plexService.resolvePlaylistKey(String(ratingKey)),
+    ]))
+    .then(([playlist, playlistKey]) => {
       if (!playlist.playlistId) return;
-      const item = playlist.items.find(i => i.ratingKey === String(ratingKey));
+      // Match by the episode/movie key that was actually added (shows use first episode)
+      const item = playlist.items.find(i => i.ratingKey === playlistKey);
       if (item) db.updateWatchlistPlexIds(userId, ratingKey, playlist.playlistId, item.playlistItemId);
     })
     .catch(err => console.warn(`Plex playlist add failed for user ${userId}:`, err.message));
@@ -92,11 +96,14 @@ router.post('/watchlist/remove', (req, res) => {
     plexService.removeFromWatchlist(userToken, plexIds.plex_playlist_id, plexIds.plex_item_id, serverUrl)
       .catch(err => console.warn(`Plex playlist remove failed for user ${userId}:`, err.message));
   } else {
-    // No stored IDs — fetch playlist to find the item
-    plexService.getWatchlist(userToken, serverUrl)
-      .then(playlist => {
+    // No stored IDs — resolve episode key then find item in playlist
+    Promise.all([
+      plexService.getWatchlist(userToken, serverUrl),
+      plexService.resolvePlaylistKey(String(ratingKey)),
+    ])
+      .then(([playlist, playlistKey]) => {
         if (!playlist.playlistId) return;
-        const item = playlist.items.find(i => i.ratingKey === String(ratingKey));
+        const item = playlist.items.find(i => i.ratingKey === playlistKey);
         if (item) return plexService.removeFromWatchlist(userToken, playlist.playlistId, item.playlistItemId, serverUrl);
       })
       .catch(err => console.warn(`Plex playlist remove failed for user ${userId}:`, err.message));

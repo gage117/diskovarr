@@ -299,10 +299,35 @@ async function getWatchlist(userToken, serverUrl) {
   return playlist || { playlistId: null, items: [] };
 }
 
+/**
+ * For TV shows, return the ratingKey of the first episode (S01E01).
+ * This keeps the Plex playlist clean — watching the episode puts the show
+ * into Continue Watching rather than flooding the playlist with all episodes.
+ */
+async function resolvePlaylistKey(ratingKey) {
+  const item = db.getLibraryItemByKey(ratingKey);
+  if (!item || item.type !== 'show') return ratingKey;
+
+  try {
+    const res = await fetch(
+      `${PLEX_URL}/library/metadata/${ratingKey}/allLeaves?X-Plex-Container-Start=0&X-Plex-Container-Size=1&X-Plex-Token=${PLEX_TOKEN}`,
+      { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) }
+    );
+    if (!res.ok) return ratingKey;
+    const json = await res.json();
+    const first = json.MediaContainer?.Metadata?.[0];
+    return first ? String(first.ratingKey) : ratingKey;
+  } catch {
+    return ratingKey;
+  }
+}
+
 async function addToWatchlist(userToken, ratingKey, serverUrl) {
   const base = serverUrl || PLEX_URL;
   const existing = await getDiskovarrPlaylist(userToken, serverUrl);
-  const uri = `server://${PLEX_SERVER_ID}/com.plexapp.plugins.library/library/metadata/${ratingKey}`;
+  // For shows, use first episode so Plex doesn't expand the entire series
+  const playlistKey = await resolvePlaylistKey(ratingKey);
+  const uri = `server://${PLEX_SERVER_ID}/com.plexapp.plugins.library/library/metadata/${playlistKey}`;
 
   if (!existing) {
     const createUrl = `${base}/playlists?type=video&title=Diskovarr&smart=0&uri=${encodeURIComponent(uri)}&X-Plex-Token=${userToken}`;
@@ -352,6 +377,7 @@ module.exports = {
   getWatchlist,
   addToWatchlist,
   removeFromWatchlist,
+  resolvePlaylistKey,
   getDeepLink,
   PLEX_URL,
   PLEX_TOKEN,
