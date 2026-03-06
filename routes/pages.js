@@ -39,16 +39,21 @@ router.get('/login', (req, res) => {
   res.render('login', { error });
 });
 
+function themeParam() {
+  // Use color as cache-busting query param — changing color = new URL = fresh CSS
+  return encodeURIComponent(db.getThemeColor());
+}
+
 // Home page — requires auth
 router.get('/', requireAuth, (req, res) => {
   const { id: userId, username, thumb } = req.session.plexUser;
-  res.render('home', { userId, username, thumb, currentPath: '/' });
+  res.render('home', { userId, username, thumb, currentPath: '/', themeParam: themeParam() });
 });
 
 // Discover page — requires auth
 router.get('/discover', requireAuth, (req, res) => {
   const { id: userId, username, thumb } = req.session.plexUser;
-  res.render('discover', { userId, username, thumb, currentPath: '/discover' });
+  res.render('discover', { userId, username, thumb, currentPath: '/discover', themeParam: themeParam() });
 });
 
 // Watchlist page — requires auth
@@ -60,7 +65,7 @@ router.get('/watchlist', requireAuth, (req, res) => {
     .map(key => db.getLibraryItemByKey(key))
     .filter(Boolean)
     .map(item => ({ ...item, deepLink: plexService.getDeepLink(item.ratingKey), isInWatchlist: true }));
-  res.render('watchlist', { userId, username, thumb, currentPath: '/watchlist', items });
+  res.render('watchlist', { userId, username, thumb, currentPath: '/watchlist', items, themeParam: themeParam() });
 });
 
 module.exports = router;
