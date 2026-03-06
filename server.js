@@ -39,6 +39,26 @@ app.use(session({
 app.use('/auth', require('./routes/auth'));
 app.use('/api', require('./routes/api'));
 app.use('/admin', require('./routes/admin'));
+
+// OG image — served as SVG for link previews (Discord, Slack, etc.)
+app.get('/og-image.svg', (req, res) => {
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0f0f0f"/>
+  <rect width="1200" height="630" fill="url(#grad)" opacity="0.4"/>
+  <defs>
+    <radialGradient id="grad" cx="30%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#e5a00d" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#0f0f0f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <text x="600" y="260" font-family="serif" font-size="160" fill="#e5a00d" text-anchor="middle" opacity="0.9">◈</text>
+  <text x="600" y="380" font-family="system-ui,sans-serif" font-size="80" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="-2">diskovarr</text>
+  <text x="600" y="450" font-family="system-ui,sans-serif" font-size="32" fill="#a0a0a0" text-anchor="middle">Personalized Plex recommendations</text>
+</svg>`);
+});
+
 app.use('/', require('./routes/pages'));
 
 // 404 handler
