@@ -1243,16 +1243,15 @@ img {
   width: 100%;
   padding: 0.35rem 0.5rem;
   font-size: 0.78rem;
-  background: rgba(220, 50, 50, 0.12);
-  color: rgba(220, 100, 100, 0.9);
-  border: 1px solid rgba(220, 50, 50, 0.25);
+  background: #c0392b;
+  color: #fff;
+  border: none;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s;
 }
 .wl-remove-btn:hover {
-  background: rgba(220, 50, 50, 0.25);
-  color: #ff7070;
+  background: #e74c3c;
 }
 .wl-remove-btn:disabled {
   opacity: 0.5;
