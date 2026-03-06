@@ -28,6 +28,8 @@ Sign in with your Plex account and Diskovarr surfaces what to watch next — sco
 - Plex Media Server (local network access)
 - Tautulli (for watch history used in preference scoring)
 
+> **Important:** Diskovarr is designed for a **single Plex server and its users**. Recommendations and watched-status filtering are built from Tautulli history and Plex library data specific to your server. Users who sign in must have an account on your Plex server — the app verifies server membership during OAuth and uses each user's personal Plex token to read their watched state. It will not work correctly for Plex users who are not members of the configured server.
+
 ## Dependencies
 
 | Package | Purpose |

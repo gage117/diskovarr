@@ -4,10 +4,13 @@
       <span class="logo-icon">◈</span>
       <span class="logo-text">diskovarr</span>
     </a>
+
     <div class="nav-tabs">
       <a href="/" class="nav-tab <%= currentPath === '/' ? 'active' : '' %>">Home</a>
       <a href="/discover" class="nav-tab <%= currentPath === '/discover' ? 'active' : '' %>">🔍 Diskovarr View</a>
     </div>
+
+    <!-- Desktop: full user row -->
     <div class="nav-user">
       <% if (thumb) { %>
         <img class="nav-avatar" src="/api/poster?path=<%= encodeURIComponent(thumb) %>" alt="<%= username %>" onerror="this.style.display='none'">
@@ -18,5 +21,60 @@
       <a href="/admin" class="nav-logout">Admin</a>
       <a href="/auth/logout" class="nav-logout">Sign out</a>
     </div>
+
   </div>
 </nav>
+
+<!-- Mobile floating menu button (bottom-right corner) -->
+<button class="nav-fab" id="nav-fab" aria-label="Open menu" aria-expanded="false">
+  <% if (thumb) { %>
+    <img src="/api/poster?path=<%= encodeURIComponent(thumb) %>" alt="<%= username %>" onerror="this.outerHTML='<span class=\'nav-fab-initial\'><%= username.charAt(0).toUpperCase() %></span>'">
+  <% } else { %>
+    <span class="nav-fab-initial"><%= username.charAt(0).toUpperCase() %></span>
+  <% } %>
+</button>
+
+<!-- Mobile popup menu (slides up from FAB) -->
+<div class="nav-fab-menu" id="nav-fab-menu" aria-hidden="true">
+  <div class="nav-fab-menu-user">
+    <% if (thumb) { %>
+      <img class="nav-fab-menu-avatar" src="/api/poster?path=<%= encodeURIComponent(thumb) %>" alt="<%= username %>" onerror="this.style.display='none'">
+    <% } else { %>
+      <div class="nav-fab-menu-avatar-placeholder"><%= username.charAt(0).toUpperCase() %></div>
+    <% } %>
+    <span class="nav-fab-menu-username"><%= username %></span>
+  </div>
+  <a href="/admin" class="nav-fab-menu-link">⚙ Admin</a>
+  <a href="/auth/logout" class="nav-fab-menu-link nav-fab-menu-signout">Sign out</a>
+</div>
+
+<div class="nav-overlay" id="nav-overlay"></div>
+
+<script>
+  (function () {
+    var fab = document.getElementById('nav-fab');
+    var menu = document.getElementById('nav-fab-menu');
+    var overlay = document.getElementById('nav-overlay');
+    if (!fab) return;
+
+    function open() {
+      menu.classList.add('open');
+      overlay.classList.add('open');
+      fab.classList.add('open');
+      fab.setAttribute('aria-expanded', 'true');
+      menu.setAttribute('aria-hidden', 'false');
+    }
+    function close() {
+      menu.classList.remove('open');
+      overlay.classList.remove('open');
+      fab.classList.remove('open');
+      fab.setAttribute('aria-expanded', 'false');
+      menu.setAttribute('aria-hidden', 'true');
+    }
+
+    fab.addEventListener('click', function () {
+      menu.classList.contains('open') ? close() : open();
+    });
+    overlay.addEventListener('click', close);
+  })();
+</script>

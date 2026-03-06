@@ -66,6 +66,7 @@ img {
   position: sticky;
   top: 0;
   z-index: 100;
+  isolation: isolate;
   height: var(--nav-height);
   background: rgba(15, 15, 15, 0.85);
   backdrop-filter: blur(12px);
@@ -182,6 +183,193 @@ img {
   color: var(--text-primary);
   border-color: var(--border-hover);
   background: var(--bg-elevated);
+}
+
+/* ── Floating action button (mobile only, hidden on desktop) ─── */
+.nav-fab {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  right: 20px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-border);
+  background: var(--bg-elevated);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--accent-border);
+  cursor: pointer;
+  overflow: hidden;
+  z-index: 300;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.nav-fab img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.nav-fab-initial {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.nav-fab.open,
+.nav-fab:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--accent-border);
+}
+
+/* ── FAB popup menu (slides up from bottom-right) ────────────── */
+.nav-fab-menu {
+  display: none;
+  position: fixed;
+  bottom: 88px;
+  right: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  min-width: 210px;
+  z-index: 300;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+  transform-origin: bottom right;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.nav-fab-menu.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.nav-fab-menu-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-fab-menu-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--accent-border);
+  flex-shrink: 0;
+}
+
+.nav-fab-menu-avatar-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav-fab-menu-username {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-fab-menu-link {
+  display: block;
+  padding: 13px 16px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-fab-menu-link:hover,
+.nav-fab-menu-link:active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-fab-menu-signout {
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* ── Overlay (closes menu on tap outside) ────────────────────── */
+.nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+}
+
+.nav-overlay.open {
+  display: block;
+}
+
+/* ── Mobile breakpoint ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  :root {
+    --nav-height: 54px;
+  }
+
+  .nav-inner {
+    padding: 0 14px;
+  }
+
+  /* Hide full desktop user row */
+  .nav-user {
+    display: none;
+  }
+
+  /* Show FAB */
+  .nav-fab {
+    display: flex;
+  }
+
+  /* Show FAB menu when open */
+  .nav-fab-menu {
+    display: block;
+  }
+
+  /* Tabs: release from absolute center, fill the space between logo and edge */
+  .nav-tabs {
+    position: static;
+    transform: none;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .nav-tab {
+    padding: 0 14px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  /* Hide logo text, show just the ◈ symbol */
+  .logo-text {
+    display: none;
+  }
+
+  .logo-icon {
+    font-size: 1.6rem;
+  }
 }
 
 /* ============================================================
