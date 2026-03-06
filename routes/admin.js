@@ -68,6 +68,8 @@ router.get('/', requireAdmin, (req, res) => {
     syncInProgress,
     lastSyncError,
     watchlistMode: db.getAdminWatchlistMode(),
+    ownerUserId: db.getOwnerUserId(),
+    knownUsers: db.getKnownUsers(),
     themeParam: encodeURIComponent(db.getThemeColor()),
   });
 });
@@ -177,6 +179,15 @@ router.post('/settings/watchlist-mode', requireAdmin, (req, res) => {
   }
   db.setAdminWatchlistMode(mode);
   res.json({ success: true, mode });
+});
+
+router.post('/settings/owner-user', requireAdmin, (req, res) => {
+  const { userId } = req.body;
+  if (!userId || !/^\d+$/.test(String(userId))) {
+    return res.status(400).json({ error: 'Invalid userId' });
+  }
+  db.setOwnerUserId(userId);
+  res.json({ success: true, userId });
 });
 
 // ── Cache operations ──────────────────────────────────────────────────────────

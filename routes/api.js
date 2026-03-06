@@ -61,8 +61,8 @@ router.post('/watchlist/add', (req, res) => {
   if (!/^\d+$/.test(String(ratingKey))) return res.status(400).json({ error: 'Invalid ratingKey' });
 
   const { id: userId, token: userToken, serverToken } = req.session.plexUser;
-  const isAdmin = userToken === plexService.PLEX_TOKEN;
-  const usePlaylist = isAdmin && db.getAdminWatchlistMode() === 'playlist';
+  const isOwner = userId === db.getOwnerUserId();
+  const usePlaylist = isOwner && db.getAdminWatchlistMode() === 'playlist';
   db.addToWatchlistDb(userId, ratingKey);
   res.json({ success: true });
 
@@ -99,8 +99,8 @@ router.post('/watchlist/remove', (req, res) => {
   if (!/^\d+$/.test(String(ratingKey))) return res.status(400).json({ error: 'Invalid ratingKey' });
 
   const { id: userId, token: userToken, serverToken } = req.session.plexUser;
-  const isAdmin = userToken === plexService.PLEX_TOKEN;
-  const usePlaylist = isAdmin && db.getAdminWatchlistMode() === 'playlist';
+  const isOwner = userId === db.getOwnerUserId();
+  const usePlaylist = isOwner && db.getAdminWatchlistMode() === 'playlist';
   // Read Plex IDs before deleting the row
   const plexIds = db.getWatchlistPlexIds(userId, ratingKey);
   db.removeFromWatchlistDb(userId, ratingKey);

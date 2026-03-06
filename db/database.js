@@ -370,6 +370,20 @@ function setAdminWatchlistMode(mode) {
     .run(mode);
 }
 
+// ── Server owner Plex user ID ─────────────────────────────────────────────────
+// The owner gets playlist-mode watchlist sync when playlist mode is enabled.
+// Set via the admin panel — pick from the known users list.
+
+function getOwnerUserId() {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'owner_plex_user_id'").get();
+  return row ? row.value : null;
+}
+
+function setOwnerUserId(userId) {
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('owner_plex_user_id', ?)")
+    .run(String(userId));
+}
+
 module.exports = {
   addDismissal, getDismissals, removeDismissal,
   addToWatchlistDb, removeFromWatchlistDb, getWatchlistFromDb,
@@ -383,4 +397,5 @@ module.exports = {
   clearLibraryDb, clearUserDismissals,
   getThemeColor, setThemeColor,
   getAdminWatchlistMode, setAdminWatchlistMode,
+  getOwnerUserId, setOwnerUserId,
 };

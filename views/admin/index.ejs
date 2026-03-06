@@ -169,28 +169,48 @@
       </div>
     </section>
 
-    <!-- ── Watchlist Mode ──────────────────────────────────────────── -->
+    <!-- ── Server Owner & Watchlist Mode ──────────────────────────── -->
     <section class="admin-section">
       <div class="admin-section-header">
-        <h2 class="section-title">Watchlist Mode</h2>
+        <h2 class="section-title">Server Owner &amp; Watchlist Mode</h2>
         <div class="status-badge <%= watchlistMode === 'playlist' ? 'status-syncing' : 'status-idle' %>" style="font-size:0.78rem;padding:4px 10px">
-          <span><%= watchlistMode === 'playlist' ? 'Playlist' : 'Watchlist' %></span>
+          <span><%= watchlistMode === 'playlist' ? 'Playlist mode' : 'Watchlist mode' %></span>
         </div>
       </div>
       <p class="section-desc" style="margin-bottom:20px">
-        Controls how <strong>your account</strong> (the server owner) syncs watchlist items to Plex.
-        This setting does <strong>not</strong> affect other users — they always sync to the native Plex.tv Watchlist.
+        Select which Plex account is the server owner. The owner can use <strong>Playlist mode</strong>, which syncs watchlist items to a private "Diskovarr" server playlist instead of the native Plex.tv Watchlist — useful if your Watchlist triggers download automation (e.g. pd_zurg). All other users always use the Plex.tv Watchlist.
       </p>
+
+      <!-- Owner picker -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+        <label style="font-size:0.9rem;color:var(--text-secondary);white-space:nowrap">Server owner account:</label>
+        <select id="owner-user-select" class="btn-admin" style="padding:6px 10px;cursor:pointer;min-width:200px">
+          <option value="">— not set —</option>
+          <% for (const u of knownUsers) { %>
+            <option value="<%= u.user_id %>" <%= ownerUserId === u.user_id ? 'selected' : '' %>>
+              <%= u.username %> (<%= u.user_id %>)
+            </option>
+          <% } %>
+        </select>
+        <button class="btn-admin btn-primary" onclick="saveOwnerUser()">Save</button>
+        <% if (ownerUserId) { %>
+          <span class="stat-sub" style="margin:0">
+            Current: <strong><%= knownUsers.find(u => u.user_id === ownerUserId)?.username || ownerUserId %></strong>
+          </span>
+        <% } %>
+      </div>
+
+      <!-- Mode toggle — only meaningful once owner is set -->
       <div class="admin-grid" style="margin-bottom:20px">
-        <div class="stat-card">
-          <div class="stat-label">Watchlist mode</div>
-          <div class="stat-value" style="font-size:1.1rem">Plex.tv Watchlist</div>
-          <div class="stat-sub">Items appear in the Plex app under Discover → Watchlist. Default for new installs.</div>
+        <div class="stat-card" style="<%= watchlistMode !== 'playlist' ? 'border-color:var(--accent-border)' : '' %>">
+          <div class="stat-label">Watchlist mode <% if (watchlistMode !== 'playlist') { %><span style="color:var(--accent)">✓ active</span><% } %></div>
+          <div class="stat-value" style="font-size:1.05rem">Plex.tv Watchlist</div>
+          <div class="stat-sub">Items appear in the Plex app under Discover → Watchlist. Default.</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Playlist mode</div>
-          <div class="stat-value" style="font-size:1.1rem">Server Playlist</div>
-          <div class="stat-sub">Items go into a private "Diskovarr" server playlist. Use this if your native Plex Watchlist is monitored by download automation (e.g. pd_zurg).</div>
+        <div class="stat-card" style="<%= watchlistMode === 'playlist' ? 'border-color:var(--accent-border)' : '' %>">
+          <div class="stat-label">Playlist mode <% if (watchlistMode === 'playlist') { %><span style="color:var(--accent)">✓ active</span><% } %></div>
+          <div class="stat-value" style="font-size:1.05rem">Server Playlist</div>
+          <div class="stat-sub">Items go into a private "Diskovarr" server playlist. Use with pd_zurg.</div>
         </div>
       </div>
       <div class="admin-actions">
@@ -468,6 +488,24 @@
     }
 
     initColorPicker();
+
+    // ── Server owner ──────────────────────────────────────────────────
+
+    async function saveOwnerUser() {
+      const userId = document.getElementById('owner-user-select').value;
+      if (!userId) { showToast('Please select a user first', true); return; }
+      const d = await fetch('/admin/settings/owner-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      }).then(r => r.json());
+      if (d.success) {
+        showToast('Server owner account saved');
+        window.location.reload();
+      } else {
+        showToast(d.error || 'Failed to save owner', true);
+      }
+    }
 
     // ── Watchlist mode toggle ─────────────────────────────────────────
 
