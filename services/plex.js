@@ -281,7 +281,7 @@ async function getDiskovarrPlaylist(userToken, serverUrl) {
     const itemsJson = await itemsRes.json();
     const items = (itemsJson.MediaContainer?.Metadata || []).map(i => ({
       ratingKey: String(i.ratingKey),
-      playlistItemId: String(i.playlistItemId),
+      playlistItemId: String(i.playlistItemID ?? i.playlistItemId),
     }));
 
     return {
