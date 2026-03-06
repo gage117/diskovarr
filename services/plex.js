@@ -404,6 +404,15 @@ async function getPlexGuid(ratingKey) {
 async function addToPlexTvWatchlist(userToken, ratingKey) {
   const guid = await getPlexGuid(ratingKey);
   if (!guid) throw new Error('Could not resolve plex GUID for ratingKey ' + ratingKey);
+  return addToPlexTvWatchlistByGuid(userToken, guid);
+}
+
+/**
+ * Add an item to the user's plex.tv Watchlist using a plex GUID hash directly.
+ * Used for non-library items (discover recommendations) where the GUID is already known
+ * from the discover search API response.
+ */
+async function addToPlexTvWatchlistByGuid(userToken, guid) {
   const res = await fetch(`https://discover.provider.plex.tv/actions/addToWatchlist?ratingKey=${guid}&X-Plex-Token=${userToken}`, {
     method: 'PUT',
     headers: { ...PLEX_HEADERS, 'X-Plex-Token': userToken },
@@ -439,6 +448,7 @@ module.exports = {
   addToWatchlist,
   removeFromWatchlist,
   addToPlexTvWatchlist,
+  addToPlexTvWatchlistByGuid,
   removeFromPlexTvWatchlist,
   resolvePlaylistKey,
   getDeepLink,

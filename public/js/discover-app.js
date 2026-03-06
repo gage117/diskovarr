@@ -102,6 +102,7 @@
           tmdbId: item.tmdbId,
           mediaType: item.mediaType,
           title: item.title,
+          year: item.year || null,
           service,
         }),
       });

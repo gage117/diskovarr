@@ -2,11 +2,13 @@ const express = require('express');
 const router = express.Router();
 const requireAuth = require('../middleware/requireAuth');
 const db = require('../db/database');
+const APP_VERSION = require('../package.json').version;
 
 function pageLocals() {
   return {
     discoverEnabled: db.isDiscoverEnabled(),
     themeParam: themeParam(),
+    appVersion: APP_VERSION,
   };
 }
 

@@ -306,7 +306,7 @@ router.post('/request', async (req, res) => {
     return res.status(403).json({ error: 'Discover feature not enabled' });
   }
 
-  const { tmdbId, mediaType, title, service } = req.body;
+  const { tmdbId, mediaType, title, year, service } = req.body;
   if (!tmdbId || !mediaType || !service) {
     return res.status(400).json({ error: 'tmdbId, mediaType, and service are required' });
   }
@@ -432,10 +432,40 @@ router.post('/request', async (req, res) => {
     db.addDiscoverRequest(userId, tmdbId, mediaType, title || '', service);
     discoverRecommender.invalidateUserCache(userId);
 
-    // Intentionally do NOT add to the user's Plex watchlist/playlist.
-    // Requesting via Overseerr/Radarr/Sonarr handles the download separately.
-    // Adding to the playlist would also trigger automation (e.g. pd_zurg) for the
-    // server owner in playlist mode, causing a duplicate download attempt.
+    // Add the item to the user's native Plex.tv Watchlist so they can track it
+    // in the Plex app while waiting for the download.
+    // Exception: skip for the server owner when in playlist mode — the playlist
+    // is monitored by download automation (e.g. pd_zurg) and the request already
+    // handles the download; adding to the playlist would trigger a duplicate attempt.
+    const watchlistMode = db.getAdminWatchlistMode();
+    const ownerUserId = db.getOwnerUserId();
+    const isOwnerInPlaylistMode = watchlistMode === 'playlist' && userId === ownerUserId;
+
+    if (!isOwnerInPlaylistMode) {
+      // Requested items are not yet in the library — find them on Plex Discover
+      // by TMDB ID match and add to the user's plex.tv Watchlist. Best-effort.
+      const userToken = req.session.plexUser.token;
+      fetch(`https://discover.provider.plex.tv/library/search?query=${encodeURIComponent(title || '')}&limit=10&X-Plex-Token=${userToken}`, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(async data => {
+          const hits = data?.MediaContainer?.SearchResult || [];
+          const hit = hits.find(h => {
+            // Guid array: [{ id: "tmdb://12345" }, ...]
+            const guids = h.Metadata?.Guid || [];
+            const hasTmdb = guids.some(g => g.id === `tmdb://${tmdbId}`);
+            const titleMatch = h.Metadata?.title === title && String(h.Metadata?.year) === String(year);
+            return hasTmdb || titleMatch;
+          });
+          if (!hit?.Metadata?.ratingKey) return;
+          // ratingKey from discover.provider.plex.tv is already the plex GUID hash
+          const plexGuid = String(hit.Metadata.ratingKey);
+          await plexService.addToPlexTvWatchlistByGuid(userToken, plexGuid);
+        })
+        .catch(() => {}); // best-effort
+    }
 
     res.json({ success: true });
   } catch (err) {

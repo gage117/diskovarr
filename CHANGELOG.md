@@ -4,6 +4,15 @@ All notable changes are documented here. Versioning follows [Semantic Versioning
 
 ---
 
+## v1.1.1 — 2026-03-06
+
+### Fixed
+
+- **Watchlist add after Diskovarr Request** — items were not being added to the user's plex.tv Watchlist after a successful request; the GUID from the Discover search API is now used directly instead of attempting a local Plex library lookup that would fail for non-library content
+- **Info modal version hardcoded** — the ℹ︎ button overlay was showing `v1.0.0` instead of the running version; now reads from `package.json` at startup like the admin panel does
+
+---
+
 ## v1.1.0 — 2026-03-06
 
 ### Added
