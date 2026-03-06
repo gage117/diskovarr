@@ -85,10 +85,18 @@ router.get('/check-pin', async (req, res) => {
     if (!resourcesRes.ok) throw new Error(`Resources fetch failed: ${resourcesRes.status}`);
     const resources = await resourcesRes.json();
 
-    const hasAccess = resources.some(r => r.clientIdentifier === PLEX_SERVER_ID);
-    if (!hasAccess) {
+    const serverResource = resources.find(r => r.clientIdentifier === PLEX_SERVER_ID);
+    if (!serverResource) {
       return res.json({ status: 'no_access' });
     }
+
+    // Pick the best URL for this user to reach the Plex server with their own token.
+    // Plex Friends' tokens are rejected on the local LAN URL — prefer the relay or
+    // external connection which goes through plex.tv and always authenticates correctly.
+    const connections = serverResource.connections || [];
+    const relayConn = connections.find(c => c.relay);
+    const externalConn = connections.find(c => !c.local && !c.relay);
+    const serverUrl = (relayConn || externalConn)?.uri || null;
 
     const username = userData.username || userData.friendlyName || 'Plex User';
     const thumb = userData.thumb || null;
@@ -103,6 +111,7 @@ router.get('/check-pin', async (req, res) => {
       username,
       thumb,
       token: userToken, // user's personal token, never sent to browser
+      serverUrl,        // relay/external URL for user-token API calls; null = use local
     };
 
     delete req.session.plexPinId;

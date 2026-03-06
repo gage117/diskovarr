@@ -251,20 +251,27 @@ async function getLibraryMap() {
 }
 
 // Watchlist / Playlist management
-async function getDiskovarrPlaylist(userToken) {
+// serverUrl: relay/external URL stored in session for this user; falls back to PLEX_URL
+async function getDiskovarrPlaylist(userToken, serverUrl) {
+  const base = serverUrl || PLEX_URL;
   try {
-    const json = await plexFetch(
-      `/playlists/all?playlistType=video&X-Plex-Token=${userToken}`,
-      userToken
-    );
+    const res = await fetch(`${base}/playlists/all?playlistType=video&X-Plex-Token=${userToken}`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new Error(`Plex API error ${res.status}`);
+    const json = await res.json();
+
     const playlists = json.MediaContainer?.Metadata || [];
     const playlist = playlists.find(p => p.title === 'Diskovarr');
     if (!playlist) return null;
 
-    const itemsJson = await plexFetch(
-      `/playlists/${playlist.ratingKey}/items?X-Plex-Token=${userToken}`,
-      userToken
-    );
+    const itemsRes = await fetch(`${base}/playlists/${playlist.ratingKey}/items?X-Plex-Token=${userToken}`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!itemsRes.ok) throw new Error(`Plex API error ${itemsRes.status}`);
+    const itemsJson = await itemsRes.json();
     const items = (itemsJson.MediaContainer?.Metadata || []).map(i => ({
       ratingKey: String(i.ratingKey),
       playlistItemId: String(i.playlistItemId),
@@ -280,43 +287,43 @@ async function getDiskovarrPlaylist(userToken) {
   }
 }
 
-async function getWatchlist(userToken) {
-  const playlist = await getDiskovarrPlaylist(userToken);
+async function getWatchlist(userToken, serverUrl) {
+  const playlist = await getDiskovarrPlaylist(userToken, serverUrl);
   return playlist || { playlistId: null, items: [] };
 }
 
-async function addToWatchlist(userToken, ratingKey) {
-  const existing = await getDiskovarrPlaylist(userToken);
+async function addToWatchlist(userToken, ratingKey, serverUrl) {
+  const base = serverUrl || PLEX_URL;
+  const existing = await getDiskovarrPlaylist(userToken, serverUrl);
   const uri = `server://${PLEX_SERVER_ID}/com.plexapp.plugins.library/library/metadata/${ratingKey}`;
 
   if (!existing) {
-    // Create new playlist
-    const createUrl = `${PLEX_URL}/playlists?type=video&title=Diskovarr&smart=0&uri=${encodeURIComponent(uri)}&X-Plex-Token=${userToken}`;
+    const createUrl = `${base}/playlists?type=video&title=Diskovarr&smart=0&uri=${encodeURIComponent(uri)}&X-Plex-Token=${userToken}`;
     const res = await fetch(createUrl, {
       method: 'POST',
-      headers: { 'Accept': 'application/json' },
+      headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) throw new Error(`Failed to create playlist: ${res.status}`);
     return res.json();
   }
 
-  // Add to existing playlist
-  const putUrl = `${PLEX_URL}/playlists/${existing.playlistId}/items?uri=${encodeURIComponent(uri)}&X-Plex-Token=${userToken}`;
+  const putUrl = `${base}/playlists/${existing.playlistId}/items?uri=${encodeURIComponent(uri)}&X-Plex-Token=${userToken}`;
   const res = await fetch(putUrl, {
     method: 'PUT',
-    headers: { 'Accept': 'application/json' },
+    headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`Failed to add to playlist: ${res.status}`);
   return res.json();
 }
 
-async function removeFromWatchlist(userToken, playlistId, playlistItemId) {
-  const url = `${PLEX_URL}/playlists/${playlistId}/items/${playlistItemId}?X-Plex-Token=${userToken}`;
+async function removeFromWatchlist(userToken, playlistId, playlistItemId, serverUrl) {
+  const base = serverUrl || PLEX_URL;
+  const url = `${base}/playlists/${playlistId}/items/${playlistItemId}?X-Plex-Token=${userToken}`;
   const res = await fetch(url, {
     method: 'DELETE',
-    headers: { 'Accept': 'application/json' },
+    headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`Failed to remove from playlist: ${res.status}`);

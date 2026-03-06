@@ -50,8 +50,8 @@ router.get('/poster', async (req, res) => {
 // GET /api/watchlist
 router.get('/watchlist', async (req, res) => {
   try {
-    const { token: userToken } = req.session.plexUser;
-    const watchlist = await plexService.getWatchlist(userToken);
+    const { token: userToken, serverUrl } = req.session.plexUser;
+    const watchlist = await plexService.getWatchlist(userToken, serverUrl);
     res.json(watchlist);
   } catch (err) {
     console.error('watchlist get error:', err);
@@ -70,8 +70,8 @@ router.post('/watchlist/add', async (req, res) => {
   }
 
   try {
-    const { token: userToken } = req.session.plexUser;
-    await plexService.addToWatchlist(userToken, ratingKey);
+    const { token: userToken, serverUrl } = req.session.plexUser;
+    await plexService.addToWatchlist(userToken, ratingKey, serverUrl);
     res.json({ success: true });
   } catch (err) {
     console.error('watchlist add error:', err);
@@ -92,8 +92,8 @@ router.post('/watchlist/remove', async (req, res) => {
   }
 
   try {
-    const { token: userToken } = req.session.plexUser;
-    await plexService.removeFromWatchlist(userToken, playlistId, playlistItemId);
+    const { token: userToken, serverUrl } = req.session.plexUser;
+    await plexService.removeFromWatchlist(userToken, playlistId, playlistItemId, serverUrl);
     res.json({ success: true });
   } catch (err) {
     console.error('watchlist remove error:', err);
@@ -105,7 +105,7 @@ router.post('/watchlist/remove', async (req, res) => {
 // Query: type (movie|show|anime|all), genres (comma list), decade, minRating, sort, page
 router.get('/discover', async (req, res) => {
   try {
-    const { id: userId, token: userToken } = req.session.plexUser;
+    const { id: userId, token: userToken, serverUrl } = req.session.plexUser;
     const {
       type = 'all',
       genres = '',
@@ -177,7 +177,7 @@ router.get('/discover', async (req, res) => {
     const allGenres = [...new Set(pool.flatMap(i => i.genres))].sort();
 
     // Attach watchlist status
-    const watchlist = await plexService.getWatchlist(userToken);
+    const watchlist = await plexService.getWatchlist(userToken, serverUrl);
     const watchlistKeys = new Set(watchlist.items.map(i => i.ratingKey));
     const watchlistMap = new Map(watchlist.items.map(i => [i.ratingKey, i]));
 
