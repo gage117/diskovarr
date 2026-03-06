@@ -284,9 +284,15 @@ db.exec(`
     user_id TEXT NOT NULL,
     rating_key TEXT NOT NULL,
     added_at INTEGER DEFAULT 0,
+    plex_playlist_id TEXT,
+    plex_item_id TEXT,
     PRIMARY KEY (user_id, rating_key)
   );
 `);
+// Migrate: add plex columns if this is an existing watchlist table
+['ALTER TABLE watchlist ADD COLUMN plex_playlist_id TEXT',
+ 'ALTER TABLE watchlist ADD COLUMN plex_item_id TEXT',
+].forEach(sql => { try { db.exec(sql); } catch (_) {} });
 
 function addToWatchlistDb(userId, ratingKey) {
   db.prepare(`INSERT OR IGNORE INTO watchlist (user_id, rating_key, added_at) VALUES (?, ?, ?)`)
@@ -301,6 +307,16 @@ function removeFromWatchlistDb(userId, ratingKey) {
 function getWatchlistFromDb(userId) {
   return db.prepare('SELECT rating_key FROM watchlist WHERE user_id = ? ORDER BY added_at DESC')
     .all(String(userId)).map(r => r.rating_key);
+}
+
+function updateWatchlistPlexIds(userId, ratingKey, plexPlaylistId, plexItemId) {
+  db.prepare('UPDATE watchlist SET plex_playlist_id = ?, plex_item_id = ? WHERE user_id = ? AND rating_key = ?')
+    .run(plexPlaylistId, plexItemId, String(userId), String(ratingKey));
+}
+
+function getWatchlistPlexIds(userId, ratingKey) {
+  return db.prepare('SELECT plex_playlist_id, plex_item_id FROM watchlist WHERE user_id = ? AND rating_key = ?')
+    .get(String(userId), String(ratingKey));
 }
 
 // ── User ratings (Plex star ratings) ─────────────────────────────────────────
@@ -336,6 +352,7 @@ function setThemeColor(hex) {
 module.exports = {
   addDismissal, getDismissals, removeDismissal,
   addToWatchlistDb, removeFromWatchlistDb, getWatchlistFromDb,
+  updateWatchlistPlexIds, getWatchlistPlexIds,
   upsertKnownUser, getKnownUsers,
   upsertManyItems, getLibraryItemsFromDb, getLibraryItemByKey,
   replaceWatchedBatch, getWatchedKeysFromDb,

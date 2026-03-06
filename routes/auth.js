@@ -80,7 +80,7 @@ router.get('/check-pin', async (req, res) => {
     const userData = await userRes.json();
 
     // Verify user has access to this server
-    const resourcesRes = await fetch('https://plex.tv/api/v2/resources', {
+    const resourcesRes = await fetch('https://plex.tv/api/v2/resources?includeHttps=1&includeRelay=1', {
       headers: { ...PLEX_TV_HEADERS, 'X-Plex-Token': userToken },
       signal: AbortSignal.timeout(10000),
     });

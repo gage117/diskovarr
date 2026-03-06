@@ -60,9 +60,19 @@ router.post('/watchlist/add', (req, res) => {
   if (!ratingKey) return res.status(400).json({ error: 'ratingKey required' });
   if (!/^\d+$/.test(String(ratingKey))) return res.status(400).json({ error: 'Invalid ratingKey' });
 
-  const { id: userId } = req.session.plexUser;
+  const { id: userId, token: userToken, serverUrl } = req.session.plexUser;
   db.addToWatchlistDb(userId, ratingKey);
   res.json({ success: true });
+
+  // Async: also sync to Plex playlist (fire and forget — DB is source of truth)
+  plexService.addToWatchlist(userToken, String(ratingKey), serverUrl)
+    .then(() => plexService.getDiskovarrPlaylist(userToken, serverUrl))
+    .then(playlist => {
+      if (!playlist) return;
+      const item = playlist.items.find(i => i.ratingKey === String(ratingKey));
+      if (item) db.updateWatchlistPlexIds(userId, ratingKey, playlist.playlistId, item.playlistItemId);
+    })
+    .catch(err => console.warn(`Plex playlist add failed for user ${userId}:`, err.message));
 });
 
 // POST /api/watchlist/remove
@@ -71,9 +81,26 @@ router.post('/watchlist/remove', (req, res) => {
   if (!ratingKey) return res.status(400).json({ error: 'ratingKey required' });
   if (!/^\d+$/.test(String(ratingKey))) return res.status(400).json({ error: 'Invalid ratingKey' });
 
-  const { id: userId } = req.session.plexUser;
+  const { id: userId, token: userToken, serverUrl } = req.session.plexUser;
+  // Read Plex IDs before deleting the row
+  const plexIds = db.getWatchlistPlexIds(userId, ratingKey);
   db.removeFromWatchlistDb(userId, ratingKey);
   res.json({ success: true });
+
+  // Async: also remove from Plex playlist using stored IDs (fire and forget)
+  if (plexIds?.plex_playlist_id && plexIds?.plex_item_id) {
+    plexService.removeFromWatchlist(userToken, plexIds.plex_playlist_id, plexIds.plex_item_id, serverUrl)
+      .catch(err => console.warn(`Plex playlist remove failed for user ${userId}:`, err.message));
+  } else {
+    // No stored IDs — fetch playlist to find the item
+    plexService.getDiskovarrPlaylist(userToken, serverUrl)
+      .then(playlist => {
+        if (!playlist) return;
+        const item = playlist.items.find(i => i.ratingKey === String(ratingKey));
+        if (item) return plexService.removeFromWatchlist(userToken, playlist.playlistId, item.playlistItemId, serverUrl);
+      })
+      .catch(err => console.warn(`Plex playlist remove failed for user ${userId}:`, err.message));
+  }
 });
 
 // GET /api/discover — filtered library browse
