@@ -259,4 +259,8 @@ function attachWatchlistStatus(result, watchlistKeys, watchlistMap, playlistId) 
   };
 }
 
-module.exports = { getRecommendations, invalidateUserCache };
+function invalidateAllCaches() {
+  recCache.clear();
+}
+
+module.exports = { getRecommendations, invalidateUserCache, invalidateAllCaches };

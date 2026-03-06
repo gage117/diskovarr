@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diskovarr — Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">diskovarr</span>
+        <span class="admin-badge">admin</span>
+      </a>
+      <div class="nav-user">
+        <a href="/" class="nav-logout">← App</a>
+        <form method="POST" action="/admin/logout" style="display:inline">
+          <button type="submit" class="nav-logout" style="background:none;border:none;cursor:pointer">Sign out</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="hero">
+      <h1 class="hero-title">Admin Panel</h1>
+      <p class="hero-sub">Library sync, cache management, and system status</p>
+    </div>
+
+    <div id="toast" class="toast" style="display:none"></div>
+
+    <!-- ── Library Sync ─────────────────────────────────────────────── -->
+    <section class="admin-section">
+      <div class="admin-section-header">
+        <h2 class="section-title">Library Sync</h2>
+        <div id="sync-status-badge" class="status-badge <%= syncInProgress ? 'status-syncing' : 'status-idle' %>">
+          <%= syncInProgress ? 'Syncing...' : 'Idle' %>
+        </div>
+      </div>
+
+      <div class="admin-grid">
+        <div class="stat-card">
+          <div class="stat-label">Movies</div>
+          <div class="stat-value" id="stat-movies"><%= stats.library.movies.toLocaleString() %></div>
+          <div class="stat-sub">
+            Last sync: <span id="stat-movies-sync"><%= stats.library.lastSyncMovies ? relativeTime(stats.library.lastSyncMovies) : 'Never' %></span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">TV &amp; Anime</div>
+          <div class="stat-value" id="stat-tv"><%= stats.library.tv.toLocaleString() %></div>
+          <div class="stat-sub">
+            Last sync: <span id="stat-tv-sync"><%= stats.library.lastSyncTV ? relativeTime(stats.library.lastSyncTV) : 'Never' %></span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Auto-Sync (every 2h)</div>
+          <div class="stat-value" id="stat-autosync">
+            <span id="autosync-text" style="color: <%= autoSyncEnabled ? 'var(--accent)' : 'var(--text-muted)' %>">
+              <%= autoSyncEnabled ? 'Enabled' : 'Disabled' %>
+            </span>
+          </div>
+          <div class="stat-sub">Controls scheduled background sync</div>
+        </div>
+      </div>
+
+      <div class="admin-actions">
+        <button class="btn-admin btn-primary" id="btn-sync-now" onclick="syncLibrary()">
+          <span>↻</span> Sync Library Now
+        </button>
+        <button class="btn-admin" id="btn-toggle-autosync" onclick="toggleAutoSync()">
+          <span id="autosync-btn-text"><%= autoSyncEnabled ? '⏸ Disable Auto-Sync' : '▶ Enable Auto-Sync' %></span>
+        </button>
+      </div>
+
+      <% if (lastSyncError) { %>
+        <div class="error-banner" style="margin-top:16px">Last sync error: <%= lastSyncError %></div>
+      <% } %>
+    </section>
+
+    <!-- ── Users & Watch Sync ───────────────────────────────────────── -->
+    <section class="admin-section">
+      <div class="admin-section-header">
+        <h2 class="section-title">Users &amp; Watch Sync</h2>
+      </div>
+
+      <% if (stats.users.length === 0) { %>
+        <p class="empty-state" style="padding:20px 0">No users have synced yet.</p>
+      <% } else { %>
+        <div class="user-table">
+          <div class="user-table-header">
+            <span>User ID</span>
+            <span>Watched Items</span>
+            <span>Last Sync</span>
+            <span>Actions</span>
+          </div>
+          <% for (const user of stats.users) { %>
+            <div class="user-table-row" id="user-row-<%= user.user_id %>">
+              <span class="user-id"><%= user.user_id %></span>
+              <span><%= user.watched_count.toLocaleString() %> items</span>
+              <span><%= user.last_sync ? relativeTime(user.last_sync) : 'Never' %></span>
+              <div class="user-actions">
+                <button class="btn-admin btn-sm" onclick="syncWatched('<%= user.user_id %>')">↻ Re-sync Watched</button>
+                <button class="btn-admin btn-sm btn-danger" onclick="clearWatched('<%= user.user_id %>')">✕ Clear Watched</button>
+                <button class="btn-admin btn-sm btn-danger" onclick="clearDismissals('<%= user.user_id %>')">✕ Clear Dismissals</button>
+              </div>
+            </div>
+          <% } %>
+        </div>
+      <% } %>
+
+      <div class="admin-actions" style="margin-top:16px">
+        <button class="btn-admin btn-danger" onclick="confirmAction('Clear ALL watched caches for all users?', clearAllWatched)">
+          Clear All Watched Caches
+        </button>
+        <button class="btn-admin btn-danger" onclick="confirmAction('Clear ALL dismissals for all users?', clearAllDismissals)">
+          Clear All Dismissals
+        </button>
+      </div>
+    </section>
+
+    <!-- ── Recommendation Cache ─────────────────────────────────────── -->
+    <section class="admin-section">
+      <div class="admin-section-header">
+        <h2 class="section-title">Recommendation Cache</h2>
+      </div>
+      <p class="section-desc">In-memory scored recommendation cache. Cleared automatically when library syncs or dismissals change. 30-minute TTL per user.</p>
+      <div class="admin-actions" style="margin-top:16px">
+        <button class="btn-admin" onclick="clearRecCache()">↺ Clear Rec Cache (All Users)</button>
+      </div>
+    </section>
+
+    <!-- ── Theme Color ─────────────────────────────────────────────── -->
+    <section class="admin-section">
+      <div class="admin-section-header">
+        <h2 class="section-title">Theme Color</h2>
+      </div>
+      <p class="section-desc" style="margin-bottom:20px">
+        Pick an accent color. Changes apply immediately across the whole app.
+      </p>
+      <div class="color-picker-row">
+        <div class="color-preview-strip" id="color-swatches">
+          <!-- Presets — filled by JS -->
+        </div>
+        <div class="color-wheel-wrap">
+          <label for="custom-color-input">Custom</label>
+          <input type="color" id="custom-color-input" title="Pick any color">
+        </div>
+        <button class="btn-admin btn-primary" id="btn-apply-color" onclick="applyColor()">Apply</button>
+      </div>
+    </section>
+
+    <!-- ── Stats ────────────────────────────────────────────────────── -->
+    <section class="admin-section">
+      <div class="admin-section-header">
+        <h2 class="section-title">Stats</h2>
+      </div>
+      <div class="admin-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Library Items</div>
+          <div class="stat-value"><%= (stats.library.movies + stats.library.tv).toLocaleString() %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Dismissals</div>
+          <div class="stat-value" id="stat-dismissals"><%= stats.dismissals.toLocaleString() %></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Users (synced)</div>
+          <div class="stat-value"><%= stats.users.length %></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // Relative time helper (rendered server-side via EJS function, also used client-side)
+    function fmtTime(unixTs) {
+      if (!unixTs) return 'Never';
+      const diff = Math.floor(Date.now() / 1000) - unixTs;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return Math.floor(diff / 86400) + 'd ago';
+    }
+
+    function showToast(msg, isError) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast ' + (isError ? 'toast-error' : 'toast-success');
+      t.style.display = 'block';
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => { t.style.display = 'none'; }, 4000);
+    }
+
+    function confirmAction(msg, fn) {
+      if (confirm(msg)) fn();
+    }
+
+    async function apiFetch(url, method) {
+      const res = await fetch(url, { method: method || 'POST' });
+      return res.json();
+    }
+
+    // ── Library sync ──────────────────────────────────────────────────
+
+    let pollInterval = null;
+
+    async function syncLibrary() {
+      const btn = document.getElementById('btn-sync-now');
+      btn.disabled = true;
+      const d = await apiFetch('/admin/sync/library');
+      showToast(d.message);
+      if (d.success) startPolling();
+      else btn.disabled = false;
+    }
+
+    function startPolling() {
+      if (pollInterval) return;
+      pollInterval = setInterval(pollStatus, 2000);
+    }
+
+    async function pollStatus() {
+      const d = await apiFetch('/admin/status', 'GET');
+      const badge = document.getElementById('sync-status-badge');
+      const btn = document.getElementById('btn-sync-now');
+
+      badge.textContent = d.syncInProgress ? 'Syncing...' : 'Idle';
+      badge.className = 'status-badge ' + (d.syncInProgress ? 'status-syncing' : 'status-idle');
+
+      if (!d.syncInProgress) {
+        btn.disabled = false;
+        clearInterval(pollInterval);
+        pollInterval = null;
+
+        // Update stats
+        document.getElementById('stat-movies').textContent = d.stats.library.movies.toLocaleString();
+        document.getElementById('stat-tv').textContent = d.stats.library.tv.toLocaleString();
+        document.getElementById('stat-movies-sync').textContent = fmtTime(d.stats.library.lastSyncMovies);
+        document.getElementById('stat-tv-sync').textContent = fmtTime(d.stats.library.lastSyncTV);
+
+        if (d.lastSyncError) showToast('Sync error: ' + d.lastSyncError, true);
+        else showToast('Library sync complete');
+      }
+    }
+
+    // ── Auto-sync toggle ──────────────────────────────────────────────
+
+    async function toggleAutoSync() {
+      const d = await apiFetch('/admin/sync/auto/' + (<%= autoSyncEnabled %> ? 'disable' : 'enable'));
+      // Reload to reflect new state cleanly
+      window.location.reload();
+    }
+
+    // ── Watched sync ──────────────────────────────────────────────────
+
+    async function syncWatched(userId) {
+      const d = await apiFetch('/admin/sync/watched/' + userId);
+      showToast(d.message, !d.success);
+    }
+
+    async function clearWatched(userId) {
+      const d = await apiFetch('/admin/cache/clear/watched/' + userId);
+      showToast(d.message);
+    }
+
+    async function clearAllWatched() {
+      const d = await apiFetch('/admin/cache/clear/watched');
+      showToast(d.message);
+    }
+
+    // ── Dismissals ────────────────────────────────────────────────────
+
+    async function clearDismissals(userId) {
+      const d = await apiFetch('/admin/cache/clear/dismissals/' + userId);
+      showToast(d.message);
+    }
+
+    async function clearAllDismissals() {
+      const d = await apiFetch('/admin/cache/clear/dismissals');
+      showToast(d.message);
+    }
+
+    // ── Rec cache ─────────────────────────────────────────────────────
+
+    async function clearRecCache() {
+      const d = await apiFetch('/admin/cache/clear/recommendations');
+      showToast(d.message);
+    }
+
+    // Auto-sync toggle: use stored state from data attribute
+    document.getElementById('btn-toggle-autosync').onclick = async function() {
+      const isEnabled = this.dataset.enabled === 'true';
+      await apiFetch('/admin/sync/auto/' + (isEnabled ? 'disable' : 'enable'));
+      window.location.reload();
+    };
+    document.getElementById('btn-toggle-autosync').dataset.enabled = '<%= autoSyncEnabled %>';
+
+    // ── Theme color ───────────────────────────────────────────────────
+
+    const PRESET_COLORS = [
+      { label: 'Plex Gold',    hex: '#e5a00d' },
+      { label: 'Netflix Red',  hex: '#e50914' },
+      { label: 'Neon Blue',    hex: '#00b4d8' },
+      { label: 'Purple',       hex: '#9b5de5' },
+      { label: 'Green',        hex: '#06d6a0' },
+      { label: 'Pink',         hex: '#f72585' },
+      { label: 'Orange',       hex: '#fb5607' },
+      { label: 'White',        hex: '#e0e0e0' },
+    ];
+
+    let selectedColor = null;
+
+    function initColorPicker() {
+      fetch('/admin/theme/color')
+        .then(r => r.json())
+        .then(d => {
+          selectedColor = d.color || '#e5a00d';
+          document.getElementById('custom-color-input').value = selectedColor;
+          renderSwatches(selectedColor);
+        });
+    }
+
+    function renderSwatches(activeColor) {
+      const wrap = document.getElementById('color-swatches');
+      wrap.innerHTML = '';
+      PRESET_COLORS.forEach(p => {
+        const s = document.createElement('div');
+        s.className = 'color-swatch' + (p.hex.toLowerCase() === activeColor.toLowerCase() ? ' active' : '');
+        s.style.background = p.hex;
+        s.title = p.label;
+        s.onclick = () => {
+          selectedColor = p.hex;
+          document.getElementById('custom-color-input').value = p.hex;
+          renderSwatches(p.hex);
+        };
+        wrap.appendChild(s);
+      });
+    }
+
+    document.getElementById('custom-color-input').oninput = function() {
+      selectedColor = this.value;
+      renderSwatches(this.value);
+    };
+
+    async function applyColor() {
+      if (!selectedColor) return;
+      const d = await fetch('/admin/theme/color', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ color: selectedColor }),
+      }).then(r => r.json());
+
+      if (d.success) {
+        // Update the theme.css link to force reload
+        const link = document.querySelector('link[href="/theme.css"]');
+        if (link) link.href = '/theme.css?t=' + Date.now();
+        showToast('Theme color updated');
+      } else {
+        showToast(d.error || 'Failed to update color', true);
+      }
+    }
+
+    initColorPicker();
+  </script>
+</body>
+</html>
+
+<%# Server-side helper -%>
+<% function relativeTime(unixTs) {
+  if (!unixTs) return 'Never';
+  const diff = Math.floor(Date.now() / 1000) - unixTs;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+} %>

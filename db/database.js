@@ -157,9 +157,90 @@ function setSyncTime(key) {
     .run(key, Math.floor(Date.now() / 1000));
 }
 
+// ── Admin stats ───────────────────────────────────────────────────────────────
+
+function getAdminStats() {
+  const movieCount = db.prepare("SELECT COUNT(*) as c FROM library_items WHERE section_id = ?")
+    .get(process.env.PLEX_MOVIES_SECTION_ID || '1')?.c || 0;
+  const tvCount = db.prepare("SELECT COUNT(*) as c FROM library_items WHERE section_id = ?")
+    .get(process.env.PLEX_TV_SECTION_ID || '2')?.c || 0;
+  const dismissalCount = db.prepare("SELECT COUNT(*) as c FROM dismissals").get()?.c || 0;
+
+  // Per-user watched counts
+  const watchedStats = db.prepare(`
+    SELECT user_id, COUNT(*) as watched_count, MAX(synced_at) as last_sync
+    FROM user_watched GROUP BY user_id
+  `).all();
+
+  // Sync times
+  const libSync1 = getSyncTime(`library_${process.env.PLEX_MOVIES_SECTION_ID || '1'}`);
+  const libSync2 = getSyncTime(`library_${process.env.PLEX_TV_SECTION_ID || '2'}`);
+
+  return {
+    library: {
+      movies: movieCount,
+      tv: tvCount,
+      lastSyncMovies: libSync1,
+      lastSyncTV: libSync2,
+    },
+    users: watchedStats,
+    dismissals: dismissalCount,
+  };
+}
+
+function clearUserWatched(userId) {
+  db.prepare('DELETE FROM user_watched WHERE user_id = ?').run(String(userId));
+  db.prepare('DELETE FROM sync_log WHERE key = ?').run(`watched_${userId}`);
+}
+
+function clearAllUserWatched() {
+  db.prepare('DELETE FROM user_watched').run();
+  db.prepare("DELETE FROM sync_log WHERE key LIKE 'watched_%'").run();
+}
+
+function clearLibraryDb(sectionId) {
+  if (sectionId) {
+    db.prepare('DELETE FROM library_items WHERE section_id = ?').run(String(sectionId));
+    db.prepare('DELETE FROM sync_log WHERE key = ?').run(`library_${sectionId}`);
+  } else {
+    db.prepare('DELETE FROM library_items').run();
+    db.prepare("DELETE FROM sync_log WHERE key LIKE 'library_%'").run();
+  }
+}
+
+function clearUserDismissals(userId) {
+  if (userId) {
+    db.prepare('DELETE FROM dismissals WHERE plex_user_id = ?').run(String(userId));
+  } else {
+    db.prepare('DELETE FROM dismissals').run();
+  }
+}
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+
+const DEFAULT_ACCENT = '#e5a00d';
+
+function getThemeColor() {
+  const row = db.prepare("SELECT last_sync FROM sync_log WHERE key = 'theme_color'").get();
+  if (!row) return DEFAULT_ACCENT;
+  // Store color as a hex string encoded in last_sync (we store it as a separate key)
+  const colorRow = db.prepare("SELECT key FROM sync_log WHERE key LIKE 'theme_color_#%'").get();
+  return colorRow ? colorRow.key.replace('theme_color_', '') : DEFAULT_ACCENT;
+}
+
+function setThemeColor(hex) {
+  // Remove any old color entry, store new one
+  db.prepare("DELETE FROM sync_log WHERE key LIKE 'theme_color_#%'").run();
+  db.prepare("INSERT OR REPLACE INTO sync_log (key, last_sync) VALUES (?, ?)")
+    .run(`theme_color_${hex}`, Math.floor(Date.now() / 1000));
+}
+
 module.exports = {
   addDismissal, getDismissals, removeDismissal,
   upsertManyItems, getLibraryItemsFromDb, getLibraryItemByKey,
   replaceWatchedBatch, getWatchedKeysFromDb,
   getSyncTime, setSyncTime,
+  getAdminStats, clearUserWatched, clearAllUserWatched,
+  clearLibraryDb, clearUserDismissals,
+  getThemeColor, setThemeColor,
 };

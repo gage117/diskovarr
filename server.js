@@ -38,6 +38,7 @@ app.use(session({
 // Routes
 app.use('/auth', require('./routes/auth'));
 app.use('/api', require('./routes/api'));
+app.use('/admin', require('./routes/admin'));
 app.use('/', require('./routes/pages'));
 
 // 404 handler
@@ -58,10 +59,16 @@ app.listen(PORT, '0.0.0.0', () => {
   const plexService = require('./services/plex');
   const REFRESH_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours
 
+  const adminRoute = require('./routes/admin');
+
   async function refreshLibrarySync() {
+    if (!adminRoute.shouldAutoSync()) {
+      console.log('Auto-sync skipped (disabled by admin)');
+      return;
+    }
     try {
-      plexService.invalidateCache(); // clear in-memory L1 so DB re-read triggers fresh Plex sync
-      await plexService.warmCache(); // re-syncs both sections to DB + in-memory
+      plexService.invalidateCache();
+      await plexService.warmCache();
       console.log(`[${new Date().toISOString()}] Library synced`);
     } catch (err) {
       console.warn('Library sync failed:', err.message);
