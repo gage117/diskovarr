@@ -32,7 +32,9 @@ router.get('/plex', async (req, res) => {
     req.session.plexPinId = pinData.id;
     req.session.plexPinCode = pinData.code;
 
-    const forwardUrl = `${req.protocol}://${req.get('host')}/auth/callback`;
+    const forwardUrl = process.env.APP_URL
+      ? `${process.env.APP_URL}/auth/callback`
+      : `${req.protocol}://${req.get('host')}/auth/callback`;
     const authUrl = `https://app.plex.tv/auth#?clientID=${PLEX_CLIENT_ID}&code=${pinData.code}&forwardUrl=${encodeURIComponent(forwardUrl)}&context%5Bdevice%5D%5Bproduct%5D=Diskovarr`;
 
     res.redirect(authUrl);

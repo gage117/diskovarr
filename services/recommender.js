@@ -2,6 +2,9 @@ const plexService = require('./plex');
 const tautulliService = require('./tautulli');
 const db = require('../db/database');
 
+// Signal type priority for reason display — genre always shows after specific signals
+const SIGNAL_TYPE_RANK = { director: 0, actor: 1, studio: 2, rating: 3, new: 4, genre: 99 };
+
 const MOVIES_SECTION = process.env.PLEX_MOVIES_SECTION_ID || '1';
 const TV_SECTION = process.env.PLEX_TV_SECTION_ID || '2';
 
@@ -231,8 +234,15 @@ function scoreItem(item, profile, dismissedKeys, watchedKeys) {
 
   const score = dirPts + actPts + genrePts + studioPts + decadePts + ratingBonus + newBonus;
 
-  // Top 3 reasons by pts, deduplicated
-  signals.sort((a, b) => b.pts - a.pts);
+  // Sort signals: specific signals (director/actor/studio/rating) always before genre,
+  // so "Because you like Comedy" never crowds out "Directed by X" or "Starring Y"
+  const hasSpecific = signals.some(s => s.type !== 'genre' && s.pts > 2);
+  signals.sort((a, b) => {
+    const ra = SIGNAL_TYPE_RANK[a.type] ?? 50;
+    const rb = SIGNAL_TYPE_RANK[b.type] ?? 50;
+    if (hasSpecific && ra !== rb) return ra - rb;
+    return b.pts - a.pts;
+  });
   const reasons = signals.slice(0, 3).map(s => s.reason);
 
   return { ...item, score, reasons, _primarySignal: signals[0]?.type };
@@ -264,30 +274,30 @@ function buildTopPicks(scoredMovies, scoredTV, scoredAnime, profile) {
     }
   }
 
-  // Seed: top 3 pure-score items from combined pool (likely genre/director picks)
+  // Seed: top 2 pure-score items (leaves more room for diversity slots)
   const combined = [...scoredMovies, ...scoredTV, ...scoredAnime].sort((a, b) => b.score - a.score);
-  for (const item of combined.slice(0, 3)) {
+  for (const item of combined.slice(0, 2)) {
     if (!used.has(item.ratingKey)) { picks.push(item); used.add(item.ratingKey); }
   }
 
-  // Director diversity: best item per top-2 directors in profile
-  const topDirs = [...profile.directorWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2);
+  // Director diversity: best item per top-3 directors in profile
+  const topDirs = [...profile.directorWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   for (const [dir] of topDirs) {
     const t = profile.directorTriggers.get(dir);
     const reason = (t?.isHighlyRated) ? `Because you loved ${t.title}` : `Directed by ${dir}`;
     tryAdd(combined, i => i.directors.includes(dir), reason);
   }
 
-  // Actor diversity: best item per top-2 actors
-  const topActors = [...profile.actorWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2);
+  // Actor diversity: best item per top-3 actors
+  const topActors = [...profile.actorWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   for (const [actor] of topActors) {
     const t = profile.actorTriggers.get(actor);
     const reason = (t?.isHighlyRated) ? `Because you loved ${t.title}` : `Starring ${actor}`;
     tryAdd(combined, i => i.cast.includes(actor), reason);
   }
 
-  // Studio diversity: best item from top studio
-  const topStudios = [...profile.studioWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 1);
+  // Studio diversity: best item from top-2 studios
+  const topStudios = [...profile.studioWeights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2);
   for (const [studio] of topStudios) {
     const t = profile.studioTriggers.get(studio);
     const reason = (t?.isHighlyRated) ? `Because you loved ${t.title}` : `More from ${studio}`;
@@ -307,11 +317,8 @@ async function getRecommendations(userId, userToken) {
   const userIdStr = String(userId);
   const cached = recCache.get(userIdStr);
   if (cached && Date.now() - cached.builtAt < REC_CACHE_TTL) {
-    // Refresh watchlist status
-    const watchlist = await plexService.getWatchlist(userToken);
-    const watchlistKeys = new Set(watchlist.items.map(i => i.ratingKey));
-    const watchlistMap = new Map(watchlist.items.map(i => [i.ratingKey, i]));
-    return attachWatchlistStatus(cached.data, watchlistKeys, watchlistMap, watchlist.playlistId);
+    const watchlistKeys = new Set(db.getWatchlistFromDb(userIdStr));
+    return attachWatchlistStatus(cached.data, watchlistKeys);
   }
 
   // Fetch library + watched keys in parallel (library from DB/cache, watched from DB)
@@ -373,20 +380,15 @@ async function getRecommendations(userId, userToken) {
 
   recCache.set(userIdStr, { data: result, builtAt: Date.now() });
 
-  // Attach watchlist status
-  const watchlist = await plexService.getWatchlist(userToken);
-  const watchlistKeys = new Set(watchlist.items.map(i => i.ratingKey));
-  const watchlistMap = new Map(watchlist.items.map(i => [i.ratingKey, i]));
-  return attachWatchlistStatus(result, watchlistKeys, watchlistMap, watchlist.playlistId);
+  const watchlistKeys = new Set(db.getWatchlistFromDb(userIdStr));
+  return attachWatchlistStatus(result, watchlistKeys);
 }
 
-function attachWatchlistStatus(result, watchlistKeys, watchlistMap, playlistId) {
+function attachWatchlistStatus(result, watchlistKeys) {
   function markItems(items) {
     return items.map(item => ({
       ...item,
       isInWatchlist: watchlistKeys.has(item.ratingKey),
-      watchlistPlaylistId: playlistId,
-      watchlistItemId: watchlistMap.get(item.ratingKey)?.playlistItemId || null,
     }));
   }
   return {

@@ -1217,3 +1217,8 @@ img {
   border-color: rgba(220, 50, 50, 0.5);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(220, 50, 50, 0.3);
 }
+
+.wl-toast-sync {
+  border-color: rgba(100, 160, 255, 0.4);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(100, 160, 255, 0.25);
+}

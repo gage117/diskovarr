@@ -1,4 +1,5 @@
 const db = require('../db/database');
+const tautulliService = require('./tautulli');
 
 const PLEX_URL = process.env.PLEX_URL;
 const PLEX_TOKEN = process.env.PLEX_TOKEN;
@@ -131,61 +132,36 @@ function invalidateCache(sectionId) {
 }
 
 /**
- * Sync watched status for a user from Plex into the local DB.
- * Uses `unwatched=0` (fast, small result) + onDeck for in-progress.
- * This runs in the background — callers always get data from DB.
+ * Sync watched status for a user from Tautulli into the local DB.
+ * Tautulli has per-user play history — accurate for both the server owner
+ * and Plex Friends without needing the admin Plex token + accountID trick.
+ * Also pulls star ratings from Plex for recommendation weighting.
  */
 async function syncUserWatched(userId, userToken) {
   const syncKey = `watched_${userId}`;
   try {
-    // Use admin token + accountID to query user-specific watch data.
-    // The user's own token may return 401 on direct server library endpoints
-    // (common with Plex Friends who authenticate via plex.tv but aren't managed users).
-    const accountParam = `&accountID=${userId}`;
-    const adminToken = PLEX_TOKEN;
-
-    // Helper: fetch with timeout, never rejects — returns empty on any failure
-    const safeFetch = (url, timeoutMs) =>
-      fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) })
-        .then(r => r.ok ? r.json() : { MediaContainer: {} })
-        .catch(err => {
-          console.warn(`syncUserWatched fetch failed (${err.message}): ${url.split('?')[0]}`);
-          return { MediaContainer: {} };
-        });
-
-    const [moviesJson, tvWatchedJson, deckJson] = await Promise.all([
-      safeFetch(`${PLEX_URL}/library/sections/${MOVIES_SECTION}/all?unwatched=0${accountParam}&X-Plex-Container-Size=99999&X-Plex-Token=${adminToken}`, 45000),
-      safeFetch(`${PLEX_URL}/library/sections/${TV_SECTION}/all?unwatched=0${accountParam}&X-Plex-Container-Size=99999&X-Plex-Token=${adminToken}`, 45000),
-      safeFetch(`${PLEX_URL}/library/onDeck?${accountParam}&X-Plex-Container-Size=9999&X-Plex-Token=${adminToken}`, 20000),
+    // Tautulli gives us accurate per-user history:
+    //   - movies watched ≥90% completion
+    //   - shows where ANY episode was watched (prevents re-recommending started shows)
+    const [movieKeys, showKeys] = await Promise.all([
+      tautulliService.getWatchedMovieKeys(userId),
+      tautulliService.getWatchedShowKeys(userId),
     ]);
 
-    const watchedKeys = new Set();
-
-    // Fully-watched movies
-    for (const item of (moviesJson.MediaContainer?.Metadata || [])) {
-      watchedKeys.add(String(item.ratingKey));
-    }
-
-    // Fully-watched TV shows
-    for (const show of (tvWatchedJson.MediaContainer?.Metadata || [])) {
-      watchedKeys.add(String(show.ratingKey));
-    }
-
-    // In-progress content from global on-deck
-    for (const item of (deckJson.MediaContainer?.Metadata || [])) {
-      if (item.type === 'movie') {
-        // Started but not finished movie — exclude from recommendations
-        watchedKeys.add(String(item.ratingKey));
-      } else if (item.grandparentRatingKey) {
-        // In-progress episode — mark the parent show as seen
-        watchedKeys.add(String(item.grandparentRatingKey));
-      }
-    }
-
+    const watchedKeys = new Set([...movieKeys, ...showKeys]);
     db.replaceWatchedBatch(userId, watchedKeys);
     db.setSyncTime(syncKey);
 
-    // Extract and store any user star ratings from watched movies
+    // Also extract Plex star ratings using admin token + accountID for recommendation weighting
+    const safeFetch = (url, timeoutMs) =>
+      fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) })
+        .then(r => r.ok ? r.json() : { MediaContainer: {} })
+        .catch(() => ({ MediaContainer: {} }));
+
+    const moviesJson = await safeFetch(
+      `${PLEX_URL}/library/sections/${MOVIES_SECTION}/all?unwatched=0&accountID=${userId}&X-Plex-Container-Size=99999&X-Plex-Token=${PLEX_TOKEN}`,
+      45000
+    );
     const ratedItems = [];
     for (const item of (moviesJson.MediaContainer?.Metadata || [])) {
       if (item.userRating) {
@@ -197,7 +173,7 @@ async function syncUserWatched(userId, userToken) {
       console.log(`Stored ${ratedItems.length} user ratings for user ${userId}`);
     }
 
-    console.log(`Synced ${watchedKeys.size} watched items for user ${userId} (movies: ${(moviesJson.MediaContainer?.Metadata || []).length}, tv shows: ${(tvWatchedJson.MediaContainer?.Metadata || []).length}, on-deck: ${(deckJson.MediaContainer?.Metadata || []).length})`);
+    console.log(`Synced ${watchedKeys.size} watched items for user ${userId} via Tautulli (movies: ${movieKeys.size}, shows: ${showKeys.size})`);
   } catch (err) {
     console.warn(`syncUserWatched(${userId}) error:`, err.message);
   } finally {

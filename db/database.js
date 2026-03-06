@@ -277,6 +277,32 @@ function getKnownUsers() {
   return db.prepare('SELECT user_id, username, thumb FROM known_users ORDER BY seen_at DESC').all();
 }
 
+// ── Watchlist (local DB — avoids Plex playlist 401 for Friend accounts) ───────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS watchlist (
+    user_id TEXT NOT NULL,
+    rating_key TEXT NOT NULL,
+    added_at INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, rating_key)
+  );
+`);
+
+function addToWatchlistDb(userId, ratingKey) {
+  db.prepare(`INSERT OR IGNORE INTO watchlist (user_id, rating_key, added_at) VALUES (?, ?, ?)`)
+    .run(String(userId), String(ratingKey), Math.floor(Date.now() / 1000));
+}
+
+function removeFromWatchlistDb(userId, ratingKey) {
+  db.prepare('DELETE FROM watchlist WHERE user_id = ? AND rating_key = ?')
+    .run(String(userId), String(ratingKey));
+}
+
+function getWatchlistFromDb(userId) {
+  return db.prepare('SELECT rating_key FROM watchlist WHERE user_id = ? ORDER BY added_at DESC')
+    .all(String(userId)).map(r => r.rating_key);
+}
+
 // ── User ratings (Plex star ratings) ─────────────────────────────────────────
 
 const upsertUserRatings = db.transaction((userId, ratings) => {
@@ -309,6 +335,7 @@ function setThemeColor(hex) {
 
 module.exports = {
   addDismissal, getDismissals, removeDismissal,
+  addToWatchlistDb, removeFromWatchlistDb, getWatchlistFromDb,
   upsertKnownUser, getKnownUsers,
   upsertManyItems, getLibraryItemsFromDb, getLibraryItemByKey,
   replaceWatchedBatch, getWatchedKeysFromDb,

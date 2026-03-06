@@ -48,64 +48,39 @@ router.get('/poster', async (req, res) => {
 });
 
 // GET /api/watchlist
-router.get('/watchlist', async (req, res) => {
-  try {
-    const { token: userToken, serverUrl } = req.session.plexUser;
-    const watchlist = await plexService.getWatchlist(userToken, serverUrl);
-    res.json(watchlist);
-  } catch (err) {
-    console.error('watchlist get error:', err);
-    res.status(500).json({ error: 'Failed to fetch watchlist' });
-  }
+router.get('/watchlist', (req, res) => {
+  const { id: userId } = req.session.plexUser;
+  const keys = db.getWatchlistFromDb(userId);
+  res.json({ items: keys.map(k => ({ ratingKey: k })) });
 });
 
 // POST /api/watchlist/add
-router.post('/watchlist/add', async (req, res) => {
+router.post('/watchlist/add', (req, res) => {
   const { ratingKey } = req.body;
   if (!ratingKey) return res.status(400).json({ error: 'ratingKey required' });
+  if (!/^\d+$/.test(String(ratingKey))) return res.status(400).json({ error: 'Invalid ratingKey' });
 
-  // Security: ratingKey must be numeric
-  if (!/^\d+$/.test(String(ratingKey))) {
-    return res.status(400).json({ error: 'Invalid ratingKey' });
-  }
-
-  try {
-    const { token: userToken, serverUrl } = req.session.plexUser;
-    await plexService.addToWatchlist(userToken, ratingKey, serverUrl);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('watchlist add error:', err);
-    res.status(500).json({ error: 'Failed to add to watchlist' });
-  }
+  const { id: userId } = req.session.plexUser;
+  db.addToWatchlistDb(userId, ratingKey);
+  res.json({ success: true });
 });
 
 // POST /api/watchlist/remove
-router.post('/watchlist/remove', async (req, res) => {
-  const { playlistId, playlistItemId } = req.body;
-  if (!playlistId || !playlistItemId) {
-    return res.status(400).json({ error: 'playlistId and playlistItemId required' });
-  }
+router.post('/watchlist/remove', (req, res) => {
+  const { ratingKey } = req.body;
+  if (!ratingKey) return res.status(400).json({ error: 'ratingKey required' });
+  if (!/^\d+$/.test(String(ratingKey))) return res.status(400).json({ error: 'Invalid ratingKey' });
 
-  // Security: must be numeric IDs
-  if (!/^\d+$/.test(String(playlistId)) || !/^\d+$/.test(String(playlistItemId))) {
-    return res.status(400).json({ error: 'Invalid playlist IDs' });
-  }
-
-  try {
-    const { token: userToken, serverUrl } = req.session.plexUser;
-    await plexService.removeFromWatchlist(userToken, playlistId, playlistItemId, serverUrl);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('watchlist remove error:', err);
-    res.status(500).json({ error: 'Failed to remove from watchlist' });
-  }
+  const { id: userId } = req.session.plexUser;
+  db.removeFromWatchlistDb(userId, ratingKey);
+  res.json({ success: true });
 });
 
 // GET /api/discover — filtered library browse
 // Query: type (movie|show|anime|all), genres (comma list), decade, minRating, sort, page
 router.get('/discover', async (req, res) => {
   try {
-    const { id: userId, token: userToken, serverUrl } = req.session.plexUser;
+    const { id: userId, token: userToken } = req.session.plexUser;
     const {
       type = 'all',
       genres = '',
@@ -176,17 +151,13 @@ router.get('/discover', async (req, res) => {
     // Get all available genres from the pool for the filter UI
     const allGenres = [...new Set(pool.flatMap(i => i.genres))].sort();
 
-    // Attach watchlist status
-    const watchlist = await plexService.getWatchlist(userToken, serverUrl);
-    const watchlistKeys = new Set(watchlist.items.map(i => i.ratingKey));
-    const watchlistMap = new Map(watchlist.items.map(i => [i.ratingKey, i]));
+    // Attach watchlist status from local DB (no Plex API needed)
+    const watchlistKeys = new Set(db.getWatchlistFromDb(userId));
 
     const itemsWithWatchlist = items.map(item => ({
       ...item,
       deepLink: plexService.getDeepLink(item.ratingKey),
       isInWatchlist: watchlistKeys.has(item.ratingKey),
-      watchlistPlaylistId: watchlist.playlistId,
-      watchlistItemId: watchlistMap.get(item.ratingKey)?.playlistItemId || null,
     }));
 
     res.json({

@@ -12,6 +12,10 @@ const SQLiteStore = require('connect-sqlite3')(session);
 
 const app = express();
 
+// Trust reverse proxy (Nginx Proxy Manager) so req.protocol and req.hostname
+// reflect the real domain (diskovarr.lebbi.org) rather than the internal IP
+app.set('trust proxy', 1);
+
 // View engine
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));

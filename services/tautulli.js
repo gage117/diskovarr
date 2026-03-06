@@ -24,7 +24,7 @@ async function getWatchedMovieKeys(userId) {
   try {
     const data = await tautulliGet('get_history', {
       user_id: String(userId),
-      length: 1000,
+      length: 10000,
       media_type: 'movie',
     });
     const rows = data.data || [];
@@ -49,7 +49,7 @@ async function getWatchedShowKeys(userId) {
   try {
     const data = await tautulliGet('get_history', {
       user_id: String(userId),
-      length: 2000,
+      length: 20000,
       media_type: 'episode',
     });
     const rows = data.data || [];

@@ -105,8 +105,23 @@
     window.DISKOVARR = {
       userId: "<%= userId %>"
     };
+
+    // Show sync toast on first login
+    if (new URLSearchParams(window.location.search).get('welcome') === '1') {
+      history.replaceState({}, '', '/');
+      window.addEventListener('DOMContentLoaded', function () {
+        // Reuse the watchlist toast infrastructure once watchlist.js loads
+        // but also fire immediately via a simple inline toast
+        var toast = document.createElement('div');
+        toast.id = 'wl-toast';
+        toast.className = 'wl-toast wl-toast-sync wl-toast-show';
+        toast.textContent = 'Syncing your watch history in the background...';
+        document.body.appendChild(toast);
+        setTimeout(function () { toast.classList.remove('wl-toast-show'); }, 5000);
+      });
+    }
   </script>
-  <script src="/js/watchlist.js?v=4"></script>
+  <script src="/js/watchlist.js?v=5"></script>
   <script src="/js/app.js?v=4"></script>
 </body>
 </html>

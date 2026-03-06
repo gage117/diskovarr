@@ -29,11 +29,11 @@ window.Watchlist = (function () {
     return res.json();
   }
 
-  async function remove(playlistId, playlistItemId) {
+  async function remove(ratingKey) {
     const res = await fetch('/api/watchlist/remove', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playlistId, playlistItemId }),
+      body: JSON.stringify({ ratingKey }),
     });
     if (!res.ok) throw new Error('Failed to remove from watchlist');
     return res.json();
@@ -43,32 +43,23 @@ window.Watchlist = (function () {
    * Toggle watchlist status for a card.
    * btn: the watchlist button element
    * item: the recommendation item object
-   * After add, re-fetches watchlist to get the playlistItemId.
    */
   async function toggle(btn, item) {
     btn.disabled = true;
     try {
       if (item.isInWatchlist) {
-        await remove(item.watchlistPlaylistId, item.watchlistItemId);
+        await remove(item.ratingKey);
         item.isInWatchlist = false;
-        item.watchlistItemId = null;
         btn.classList.remove('in-watchlist');
         btn.textContent = '+ Watchlist';
         btn.title = 'Add to Diskovarr Watchlist';
       } else {
         await add(item.ratingKey);
-        // Re-fetch watchlist to get playlistItemId for future removes
-        const wl = await fetch('/api/watchlist').then(r => r.json());
-        const match = wl.items.find(i => i.ratingKey === item.ratingKey);
-        if (match) {
-          item.watchlistItemId = match.playlistItemId;
-          item.watchlistPlaylistId = wl.playlistId;
-        }
         item.isInWatchlist = true;
         btn.classList.add('in-watchlist');
         btn.textContent = '✓ In Watchlist';
         btn.title = 'Remove from Diskovarr Watchlist';
-        showToast('Added to your Diskovarr playlist ◈', 'add');
+        showToast('Added to your Diskovarr watchlist ◈', 'add');
       }
     } catch (err) {
       console.error('Watchlist toggle error:', err);
