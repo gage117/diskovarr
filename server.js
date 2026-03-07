@@ -76,7 +76,7 @@ app.use(express.urlencoded({ extended: true }));
 // Session
 app.use(session({
   store: new SQLiteStore({ db: 'sessions.db', dir: dataDir }),
-  secret: process.env.SESSION_SECRET || 'diskovarr-dev-secret',
+  secret: process.env.SESSION_SECRET || (() => { throw new Error('SESSION_SECRET is not set'); })(),
   resave: false,
   saveUninitialized: false,
   cookie: {
