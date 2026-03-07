@@ -167,7 +167,6 @@ router.post('/sync/watched/:userId', requireAdmin, async (req, res) => {
   const { DatabaseSync } = require('node:sqlite');
   const sessDb = new DatabaseSync(require('path').join(__dirname, '..', 'data', 'sessions.db'));
   const rows = sessDb.prepare('SELECT sess FROM sessions').all();
-  sessDb.close();
 
   let userToken = null;
   for (const row of rows) {

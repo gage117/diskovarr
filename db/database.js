@@ -348,13 +348,14 @@ function updateWatchlistPlexGuid(userId, ratingKey, plexGuid) {
 
 // ── User ratings (Plex star ratings) ─────────────────────────────────────────
 
+const stmtUpsertUserRating = db.prepare(
+  'INSERT OR REPLACE INTO user_ratings (user_id, rating_key, user_rating) VALUES (?, ?, ?)'
+);
+
 function upsertUserRatings(userId, ratings) {
-  const stmt = db.prepare(
-    'INSERT OR REPLACE INTO user_ratings (user_id, rating_key, user_rating) VALUES (?, ?, ?)'
-  );
   withTransaction(() => {
     for (const { ratingKey, userRating } of ratings) {
-      stmt.run(String(userId), String(ratingKey), userRating);
+      stmtUpsertUserRating.run(String(userId), String(ratingKey), userRating);
     }
   });
 }

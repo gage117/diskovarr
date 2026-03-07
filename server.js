@@ -22,6 +22,7 @@ class SQLiteStore extends session.Store {
       )
     `);
     this._db = sessDb;
+    setInterval(() => this._pruneExpired(), 15 * 60 * 1000).unref();
   }
 
   get(sid, cb) {
@@ -48,6 +49,10 @@ class SQLiteStore extends session.Store {
     const expired = Math.floor(Date.now() / 1000) + Math.floor(maxAge);
     this._db.prepare('UPDATE sessions SET expired = ? WHERE sid = ?').run(expired, sid);
     cb(null);
+  }
+
+  _pruneExpired() {
+    this._db.prepare('DELETE FROM sessions WHERE expired < ?').run(Math.floor(Date.now() / 1000));
   }
 }
 

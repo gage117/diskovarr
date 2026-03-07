@@ -28,7 +28,7 @@ Sign in with your Plex account and Diskovarr surfaces what to watch next — sco
 
 ## Requirements
 
-- Docker (recommended) **or** Node.js >= 20
+- Docker (recommended) **or** Node.js >= 23.4.0 (required for the built-in `node:sqlite` module)
 - Plex Media Server (local network access)
 - Tautulli (for watch history used in preference scoring)
 
@@ -199,12 +199,12 @@ Recommendations are sourced from TMDB based on your top watched movies and shows
 |---|---|
 | `express` | Web framework and routing |
 | `express-session` | Session middleware |
-| `connect-sqlite3` | SQLite-backed session store |
-| `better-sqlite3` | Synchronous SQLite for library/watched/settings data |
 | `ejs` | Server-side HTML templating |
 | `dotenv` | Environment variable loading |
 
-All HTTP requests to Plex, Tautulli, and TMDB use Node.js 20's built-in `fetch`.
+SQLite (library, watched history, sessions, settings) uses Node.js's built-in `node:sqlite` (`DatabaseSync`) — no native addon required.
+
+All HTTP requests to Plex, Tautulli, and TMDB use Node.js's built-in `fetch`.
 
 ## Development
 
