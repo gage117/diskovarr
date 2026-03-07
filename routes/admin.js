@@ -1,10 +1,19 @@
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const db = require('../db/database');
 const plexService = require('../services/plex');
 const recommender = require('../services/recommender');
 const discoverRecommender = require('../services/discoverRecommender');
 const { version: APP_VERSION } = require('../package.json');
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again later' },
+});
 
 // ── Update check (GitHub releases, 6h cache) ─────────────────────────────────
 
@@ -64,7 +73,7 @@ router.get('/login', (req, res) => {
   res.render('admin/login', { error: null });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { password } = req.body;
   const adminPassword = process.env.ADMIN_PASSWORD;
 
@@ -164,7 +173,8 @@ router.post('/sync/auto/disable', requireAdmin, (req, res) => {
 router.post('/sync/watched/:userId', requireAdmin, async (req, res) => {
   const { userId } = req.params;
   // Find the user's token from active sessions
-  const sessDb = require('better-sqlite3')(require('path').join(__dirname, '..', 'data', 'sessions.db'));
+  const { DatabaseSync } = require('node:sqlite');
+  const sessDb = new DatabaseSync(require('path').join(__dirname, '..', 'data', 'sessions.db'));
   const rows = sessDb.prepare('SELECT sess FROM sessions').all();
   sessDb.close();
 
