@@ -73,7 +73,7 @@ function invalidateUserCache(userId) {
 }
 
 function normalizeMap(map) {
-  const max = Math.max(...map.values(), 1);
+  const max = Math.max(1, ...Array.from(map.values()));
   const out = new Map();
   for (const [k, v] of map) out.set(k, v / max);
   return out;

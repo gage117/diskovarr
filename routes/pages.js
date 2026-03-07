@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const requireAuth = require('../middleware/requireAuth');
 const db = require('../db/database');
+const plexService = require('../services/plex');
 const APP_VERSION = require('../package.json').version;
 
 function pageLocals() {
@@ -86,7 +87,6 @@ router.get('/explore', requireAuth, (req, res) => {
 // Watchlist page — requires auth
 router.get('/watchlist', requireAuth, (req, res) => {
   const { id: userId, username, thumb } = req.session.plexUser;
-  const plexService = require('../services/plex');
   const keys = db.getWatchlistFromDb(userId);
   const items = keys
     .map(key => db.getLibraryItemByKey(key))

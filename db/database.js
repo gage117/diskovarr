@@ -99,7 +99,7 @@ function removeDismissal(userId, ratingKey) {
   "ALTER TABLE library_items ADD COLUMN audience_rating_image TEXT DEFAULT ''",
   "ALTER TABLE library_items ADD COLUMN studio TEXT DEFAULT ''",
   'ALTER TABLE library_items ADD COLUMN tmdb_id TEXT DEFAULT NULL',
-].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+].forEach(sql => { try { db.exec(sql); } catch (e) { if (!e.message.includes('duplicate column')) throw e; } });
 
 // User ratings table (Plex star ratings, per user)
 db.exec(`
@@ -314,7 +314,7 @@ db.exec(`
 ['ALTER TABLE watchlist ADD COLUMN plex_playlist_id TEXT',
  'ALTER TABLE watchlist ADD COLUMN plex_item_id TEXT',
  'ALTER TABLE watchlist ADD COLUMN plex_guid TEXT',
-].forEach(sql => { try { db.exec(sql); } catch (_) {} });
+].forEach(sql => { try { db.exec(sql); } catch (e) { if (!e.message.includes('duplicate column')) throw e; } });
 
 function addToWatchlistDb(userId, ratingKey) {
   db.prepare(`INSERT OR IGNORE INTO watchlist (user_id, rating_key, added_at) VALUES (?, ?, ?)`)
@@ -368,15 +368,19 @@ function getUserRatingsFromDb(userId) {
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 const DEFAULT_ACCENT = '#e5a00d';
+let _themeColorCache = null;
 
 function getThemeColor() {
+  if (_themeColorCache !== null) return _themeColorCache;
   const row = db.prepare("SELECT value FROM settings WHERE key = 'theme_color'").get();
-  return row ? row.value : DEFAULT_ACCENT;
+  _themeColorCache = row ? row.value : DEFAULT_ACCENT;
+  return _themeColorCache;
 }
 
 function setThemeColor(hex) {
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme_color', ?)")
     .run(hex);
+  _themeColorCache = hex;
 }
 
 // ── Watchlist mode (admin only) ───────────────────────────────────────────────

@@ -55,8 +55,6 @@ function getAutoSyncEnabled() { return autoSyncEnabled; }
 // Called by server.js before each scheduled sync
 function shouldAutoSync() { return autoSyncEnabled && !syncInProgress; }
 
-module.exports.shouldAutoSync = shouldAutoSync;
-
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 router.get('/login', (req, res) => {
@@ -167,6 +165,7 @@ router.post('/sync/watched/:userId', requireAdmin, async (req, res) => {
   const { DatabaseSync } = require('node:sqlite');
   const sessDb = new DatabaseSync(require('path').join(__dirname, '..', 'data', 'sessions.db'));
   const rows = sessDb.prepare('SELECT sess FROM sessions').all();
+  sessDb.close();
 
   let userToken = null;
   for (const row of rows) {
