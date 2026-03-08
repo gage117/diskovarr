@@ -167,7 +167,6 @@ async function buildPreferenceProfile(userId, libraryMap) {
       tmdbService.getRecommendations(item.tmdbId, mt).catch(() => []),
       tmdbService.getSimilar(item.tmdbId, mt).catch(() => []),
     ]);
-    const seedGenres = new Set((item.genres || []).map(g => g.toLowerCase()));
     for (const r of [...recs, ...similar]) {
       const rid = Number(r.tmdbId);
       const existing = tmdbSimilarMap.get(rid);
@@ -177,9 +176,8 @@ async function buildPreferenceProfile(userId, libraryMap) {
           existing.sourceTitle = item.title;
           existing._bestWeight = seedWeight;
         }
-        seedGenres.forEach(g => existing.seedGenres.add(g));
       } else {
-        tmdbSimilarMap.set(rid, { weight: seedWeight, sourceTitle: item.title, _bestWeight: seedWeight, seedGenres: new Set(seedGenres) });
+        tmdbSimilarMap.set(rid, { weight: seedWeight, sourceTitle: item.title, _bestWeight: seedWeight });
       }
     }
   }));
@@ -306,16 +304,7 @@ function scoreItem(item, profile, dismissedKeys, watchedKeys, tmdbEnrich) {
   if (numericTmdbId && tmdbSimilarMap) {
     const entry = tmdbSimilarMap.get(numericTmdbId);
     if (entry) {
-      // Penalise cross-genre matches (TMDB uses behaviour-based similarity,
-      // so unrelated titles can surface — e.g. Mars Attacks ↔ Digimon).
-      // If the candidate shares at least one genre with the seed, full score.
-      // If zero overlap, cap at 30% of the raw score.
-      const candidateGenres = new Set((item.genres || []).map(g => g.toLowerCase()));
-      const hasGenreOverlap = entry.seedGenres
-        ? [...entry.seedGenres].some(g => candidateGenres.has(g))
-        : true;
-      const overlapMult = hasGenreOverlap ? 1.0 : 0.3;
-      similarPts = Math.min(entry.weight * 8 * overlapMult, 40 * overlapMult);
+      similarPts = Math.min(entry.weight * 8, 40);
       if (similarPts > 3) {
         signals.push({ pts: similarPts, reason: `Similar to ${entry.sourceTitle}`, type: 'similar' });
       }

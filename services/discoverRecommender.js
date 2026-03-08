@@ -43,12 +43,7 @@ function scoreTmdbItem(item, profile) {
   if (item.tmdbId && tmdbSimilarMap) {
     const entry = tmdbSimilarMap.get(Number(item.tmdbId));
     if (entry) {
-      const candidateGenres = new Set((item.genres || []).map(g => g.toLowerCase()));
-      const hasGenreOverlap = entry.seedGenres
-        ? [...entry.seedGenres].some(g => candidateGenres.has(g))
-        : true;
-      const overlapMult = hasGenreOverlap ? 1.0 : 0.3;
-      similarPts = Math.min(entry.weight * 8 * overlapMult, 40 * overlapMult);
+      similarPts = Math.min(entry.weight * 8, 40);
       if (similarPts > 3) {
         signals.push({ pts: similarPts, reason: `Similar to ${entry.sourceTitle}`, type: 'similar' });
       }
