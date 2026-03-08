@@ -542,10 +542,15 @@
     });
   }
 
+  function isMatureEnabled() {
+    return localStorage.getItem('matureEnabled') === 'true';
+  }
+
   async function fetchAndRender(shuffle) {
     if (shuffle) showSkeletons();
     try {
-      var r = await fetch('/api/explore/recommendations');
+      var url = '/api/explore/recommendations' + (isMatureEnabled() ? '?mature=true' : '');
+      var r = await fetch(url);
       var data = await r.json();
 
       if (!r.ok) {
@@ -569,6 +574,15 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    var toggle = document.getElementById('mature-toggle');
+    if (toggle) {
+      toggle.checked = isMatureEnabled();
+      toggle.addEventListener('change', function () {
+        localStorage.setItem('matureEnabled', toggle.checked ? 'true' : 'false');
+        showSkeletons();
+        fetchAndRender(false);
+      });
+    }
     fetchAndRender(false);
   });
 

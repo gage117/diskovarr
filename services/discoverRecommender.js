@@ -18,18 +18,37 @@ function invalidateAllCaches() {
   discoverCache.clear();
 }
 
-// Signal rank for reason display (mirrors recommender.js)
-const SIGNAL_TYPE_RANK = { director: 0, actor: 1, studio: 2, rating: 3, genre: 99 };
+// Signal rank for reason display — mirrors recommender.js exactly
+const SIGNAL_TYPE_RANK = { collection: 0, director: 1, similar: 2, actor: 3, keyword: 4, studio: 5, rating: 6, new: 7, genre: 99 };
+
+// Genre names that are clearly titles rather than real genres (e.g. Plex custom genres)
+function isRealGenre(g) {
+  return g.length <= 20 && g.split(' ').length <= 3;
+}
 
 /**
- * Score a TMDB item against the user's preference profile.
- * Uses the same signal budget as the in-library scorer but adapted for TMDB metadata.
+ * Score a TMDB candidate against the user's preference profile.
+ * Mirrors scoreItem() in recommender.js — same signal budget and thresholds.
  */
 function scoreTmdbItem(item, profile) {
   const { genreWeights, directorWeights, actorWeights, studioWeights, decadeWeights,
+          keywordWeights, collectionWeights, tmdbSimilarMap,
           directorTriggers, actorTriggers, studioTriggers } = profile;
 
   const signals = [];
+
+  // ── TMDB Similarity (max 40pts) ───────────────────────────────────────────
+  // Discover items already have numeric tmdbId from the TMDB API.
+  let similarPts = 0;
+  if (item.tmdbId && tmdbSimilarMap) {
+    const entry = tmdbSimilarMap.get(Number(item.tmdbId));
+    if (entry) {
+      similarPts = Math.min(entry.weight * 8, 40);
+      if (similarPts > 3) {
+        signals.push({ pts: similarPts, reason: `Similar to ${entry.sourceTitle}`, type: 'similar' });
+      }
+    }
+  }
 
   // ── Director (max 30pts) ──────────────────────────────────────────────────
   let dirPts = 0, topDir = null, dirTrigger = null;
@@ -45,19 +64,19 @@ function scoreTmdbItem(item, profile) {
     signals.push({ pts: dirPts, reason, type: 'director' });
   }
 
-  // ── Actor (max 25pts) ─────────────────────────────────────────────────────
+  // ── Actor (max 35pts) ─────────────────────────────────────────────────────
   let actPts = 0, topActor = null, actTrigger = null;
   for (const a of (item.cast || []).slice(0, 10)) {
     const w = actorWeights.get(a) || 0;
-    if (w > 0) {
-      actPts += w * 7;
+    if (w > 0.1) {
+      actPts += w * 15;
       if (!topActor || w > (actorWeights.get(topActor) || 0)) {
         topActor = a;
         actTrigger = actorTriggers.get(a);
       }
     }
   }
-  actPts = Math.min(actPts, 25);
+  actPts = Math.min(actPts, 35);
   if (actPts > 3) {
     const reason = actTrigger?.isHighlyRated
       ? `Because you loved ${actTrigger.title}`
@@ -65,38 +84,44 @@ function scoreTmdbItem(item, profile) {
     signals.push({ pts: actPts, reason, type: 'actor' });
   }
 
-  // ── Genre (max 20pts) ─────────────────────────────────────────────────────
+  // ── Keywords / themes (max 25pts) ─────────────────────────────────────────
+  let kwPts = 0;
+  for (const kw of (item.keywords || [])) {
+    const w = keywordWeights?.get(kw) || 0;
+    if (w > 0.1) kwPts += Math.min(w * 5, 5);
+  }
+  kwPts = Math.min(kwPts, 25);
+  if (kwPts > 3) {
+    signals.push({ pts: kwPts, reason: `Matches themes you enjoy`, type: 'keyword' });
+  }
+
+  // ── Franchise/Collection (max 30pts) ──────────────────────────────────────
+  let collectionPts = 0;
+  if (item.collection && collectionWeights) {
+    collectionPts = Math.min((collectionWeights.get(item.collection) || 0) * 30, 30);
+    if (collectionPts > 5) {
+      signals.push({ pts: collectionPts, reason: `Part of a series you watch`, type: 'collection' });
+    }
+  }
+
+  // ── Studio/Network (max 10pts, supporting context only) ───────────────────
+  let studioPts = 0, topStudio = null;
+  if (item.studio) {
+    for (const s of item.studio.split(',').map(s => s.trim())) {
+      const pts = Math.min((studioWeights.get(s) || 0) * 10, 10);
+      if (pts > studioPts) { studioPts = pts; topStudio = s; }
+    }
+  }
+
+  // ── Genre (max 8pts) ──────────────────────────────────────────────────────
   let genrePts = 0;
   const matchedGenres = [];
   for (const g of (item.genres || [])) {
     const w = genreWeights.get(g) || 0;
-    genrePts += Math.min(w * 7, 7);
-    if (w > 0.2) matchedGenres.push({ g, w });
+    genrePts += Math.min(w * 4, 4);
+    if (w > 0.35 && isRealGenre(g)) matchedGenres.push({ g, w });
   }
-  genrePts = Math.min(genrePts, 20);
-  if (genrePts > 2 && matchedGenres.length > 0) {
-    matchedGenres.sort((a, b) => b.w - a.w);
-    signals.push({ pts: genrePts, reason: `Because you like ${matchedGenres[0].g}`, type: 'genre' });
-  }
-
-  // ── Studio/Network (max 15pts) ────────────────────────────────────────────
-  let studioPts = 0;
-  if (item.studio) {
-    // Studio field may be "Warner Bros., DC" — try each part
-    const studioNames = item.studio.split(',').map(s => s.trim());
-    for (const s of studioNames) {
-      const pts = Math.min((studioWeights.get(s) || 0) * 15, 15);
-      if (pts > studioPts) {
-        studioPts = pts;
-        if (pts > 2) {
-          const t = studioTriggers.get(s);
-          const reason = t?.isHighlyRated ? `Because you loved ${t.title}` : `More from ${s}`;
-          signals.push({ pts, reason, type: 'studio' });
-        }
-      }
-    }
-    studioPts = Math.min(studioPts, 15);
-  }
+  genrePts = Math.min(genrePts, 8);
 
   // ── Decade (max 8pts) ─────────────────────────────────────────────────────
   let decadePts = 0;
@@ -105,21 +130,37 @@ function scoreTmdbItem(item, profile) {
     decadePts = Math.min((decadeWeights.get(decade) || 0) * 8, 8);
   }
 
-  // ── Rating bonus ──────────────────────────────────────────────────────────
-  // TMDB voteAverage is 0–10; treat similarly to Plex audienceRating
-  const ratingBonus = item.voteAverage >= 8.5 ? 5 : item.voteAverage >= 7.5 ? 2 : 0;
-  if (ratingBonus >= 5) signals.push({ pts: ratingBonus, reason: 'Highly Rated', type: 'rating' });
+  // ── Conditional pushes: studio, genre, rating ─────────────────────────────
+  const hasPersonalSignal = signals.some(s => ['similar', 'director', 'actor', 'keyword', 'collection'].includes(s.type));
 
-  const score = dirPts + actPts + genrePts + studioPts + decadePts + ratingBonus;
+  // Studio only as supporting context
+  if (studioPts > 3 && hasPersonalSignal && topStudio) {
+    const t = studioTriggers.get(topStudio);
+    const reason = t?.isHighlyRated ? `Because you loved ${t.title}` : `More from ${topStudio}`;
+    signals.push({ pts: studioPts, reason, type: 'studio' });
+  }
 
-  // Sort signals: specific before genre
-  const hasSpecific = signals.some(s => s.type !== 'genre' && s.pts > 2);
-  signals.sort((a, b) => {
-    if (hasSpecific) {
-      const ra = SIGNAL_TYPE_RANK[a.type] ?? 50;
-      const rb = SIGNAL_TYPE_RANK[b.type] ?? 50;
-      if (ra !== rb) return ra - rb;
+  // Genre when fewer than 2 personal signals and item is decent quality
+  const personalCount = signals.filter(s => ['similar', 'director', 'actor', 'keyword', 'collection'].includes(s.type)).length;
+  if (genrePts > 2 && matchedGenres.length > 0 && personalCount < 2) {
+    matchedGenres.sort((a, b) => b.w - a.w);
+    if (item.voteAverage >= 7.0 || personalCount === 0) {
+      signals.push({ pts: genrePts, reason: `Because you like ${matchedGenres[0].g}`, type: 'genre' });
     }
+  }
+
+  // Rating only when nothing personal matched at all
+  const ratingBonus = item.voteAverage >= 9.0 ? 3 : item.voteAverage >= 8.0 ? 1 : 0;
+  if (ratingBonus >= 3 && !hasPersonalSignal) {
+    signals.push({ pts: ratingBonus, reason: 'Highly Rated', type: 'rating' });
+  }
+
+  const score = similarPts + dirPts + actPts + kwPts + collectionPts + genrePts + studioPts + decadePts + ratingBonus;
+
+  signals.sort((a, b) => {
+    const ra = SIGNAL_TYPE_RANK[a.type] ?? 50;
+    const rb = SIGNAL_TYPE_RANK[b.type] ?? 50;
+    if (ra !== rb) return ra - rb;
     return b.pts - a.pts;
   });
   const reasons = signals.slice(0, 3).map(s => s.reason);
@@ -219,14 +260,20 @@ async function buildDiscoverPools(userId, userToken) {
     if (!isAlreadyHave(tmdbId, mt, title, year)) candidateSet.set(key, { tmdbId, mediaType: mt });
   }
 
-  // 1. TMDB recommendations for user's top watched movies
-  const movieRecPromises = topMovieIds.slice(0, 15).map(id =>
+  // 1. TMDB recommendations + similar for user's top watched movies
+  const movieRecPromises = topMovieIds.slice(0, 20).map(id =>
     tmdbService.getRecommendations(id, 'movie').then(recs => recs.forEach(r => addCandidate(r.tmdbId, 'movie', r.title, r.year)))
   );
+  const movieSimPromises = topMovieIds.slice(0, 10).map(id =>
+    tmdbService.getSimilar(id, 'movie').then(recs => recs.forEach(r => addCandidate(r.tmdbId, 'movie', r.title, r.year)))
+  );
 
-  // 2. TMDB recommendations for user's top watched shows
-  const tvRecPromises = topTvIds.slice(0, 8).map(id =>
+  // 2. TMDB recommendations + similar for user's top watched shows
+  const tvRecPromises = topTvIds.slice(0, 15).map(id =>
     tmdbService.getRecommendations(id, 'tv').then(recs => recs.forEach(r => addCandidate(r.tmdbId, 'tv', r.title, r.year)))
+  );
+  const tvSimPromises = topTvIds.slice(0, 8).map(id =>
+    tmdbService.getSimilar(id, 'tv').then(recs => recs.forEach(r => addCandidate(r.tmdbId, 'tv', r.title, r.year)))
   );
 
   // 3. Genre-based discovery using top genres from preference profile
@@ -269,7 +316,28 @@ async function buildDiscoverPools(userId, userToken) {
     tmdbService.discoverAnime(2),
   ]).then(([p1, p2]) => [...p1, ...p2].forEach(r => addCandidate(r.tmdbId, 'tv', r.title, r.year)));
 
-  await Promise.all([...movieRecPromises, ...tvRecPromises, ...genreDiscoverPromises, trendingMoviePromise, trendingTvPromise, animePromise]);
+  // 6. Person-based candidates: titles from top actors and directors
+  let personPromises = [];
+  if (profile) {
+    const topActors = [...profile.actorWeights.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name]) => name);
+    const topDirectors = [...profile.directorWeights.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([name]) => name);
+
+    personPromises = [
+      ...topActors.map(name =>
+        tmdbService.getPersonCandidates(name, 'movie').then(recs => recs.forEach(r => addCandidate(r.tmdbId, 'movie', r.title, r.year)))
+      ),
+      ...topDirectors.map(name =>
+        tmdbService.getPersonCandidates(name, 'movie').then(recs => recs.forEach(r => addCandidate(r.tmdbId, 'movie', r.title, r.year)))
+      ),
+      ...topActors.slice(0, 2).map(name =>
+        tmdbService.getPersonCandidates(name, 'tv').then(recs => recs.forEach(r => addCandidate(r.tmdbId, 'tv', r.title, r.year)))
+      ),
+    ];
+  }
+
+  await Promise.all([...movieRecPromises, ...movieSimPromises, ...tvRecPromises, ...tvSimPromises, ...genreDiscoverPromises, trendingMoviePromise, trendingTvPromise, animePromise, ...personPromises]);
 
   // ── Fetch details for all candidates ────────────────────────────────────
   const candidates = [...candidateSet.values()];
@@ -333,7 +401,7 @@ async function buildDiscoverPools(userId, userToken) {
   };
 }
 
-async function getDiscoverRecommendations(userId, userToken) {
+async function getDiscoverRecommendations(userId, userToken, { mature = false } = {}) {
   const userIdStr = String(userId);
   const cached = discoverCache.get(userIdStr);
 
@@ -352,6 +420,7 @@ async function getDiscoverRecommendations(userId, userToken) {
   function filterAndMark(items) {
     return items
       .filter(item => !dismissedIds.has(`${item.tmdbId}:${item.mediaType}`))
+      .filter(item => mature || !item.adult)
       .map(item => ({ ...item, isRequested: requestedIds.has(`${item.tmdbId}:${item.mediaType}`) }));
   }
 

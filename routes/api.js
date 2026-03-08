@@ -292,7 +292,8 @@ router.get('/explore/recommendations', async (req, res) => {
   }
   try {
     const { id: userId, token: userToken } = req.session.plexUser;
-    const data = await discoverRecommender.getDiscoverRecommendations(userId, userToken);
+    const mature = req.query.mature === 'true';
+    const data = await discoverRecommender.getDiscoverRecommendations(userId, userToken, { mature });
     res.json(data);
   } catch (err) {
     console.error('explore/recommendations error:', err);

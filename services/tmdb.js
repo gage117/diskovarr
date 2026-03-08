@@ -45,6 +45,10 @@ function normalizeMovie(details, credits) {
     studio: (details.production_companies || []).map(c => c.name).slice(0, 2).join(', ') || '',
     originCountry: (details.production_countries || []).map(c => c.iso_3166_1),
     isAnime: false,
+    adult: details.adult || false,
+    keywords: (details.keywords?.keywords || []).map(k => k.name),
+    collection: details.belongs_to_collection?.id || null,
+    collectionName: details.belongs_to_collection?.name || null,
   };
 }
 
@@ -52,6 +56,9 @@ function normalizeTV(details, credits) {
   const originCountries = details.origin_country || [];
   const isAnime = originCountries.includes('JP') &&
     (details.genres || []).some(g => g.id === 16); // Animation genre
+  // Check content ratings for explicit material (Rx = hentai on TMDB)
+  const contentRatings = (details.content_ratings?.results || []);
+  const isExplicit = contentRatings.some(r => r.rating === 'Rx');
   return {
     tmdbId: details.id,
     mediaType: 'tv',
@@ -70,6 +77,8 @@ function normalizeTV(details, credits) {
     studio: (details.networks || []).map(n => n.name).slice(0, 2).join(', ') || '',
     originCountry: originCountries,
     isAnime,
+    adult: details.adult || isExplicit,
+    keywords: (details.keywords?.results || []).map(k => k.name),
   };
 }
 
@@ -78,8 +87,11 @@ async function getItemDetails(tmdbId, mediaType) {
   if (cached) return cached;
 
   try {
+    const detailsPath = mediaType === 'tv'
+      ? `/tv/${tmdbId}?append_to_response=content_ratings,keywords`
+      : `/movie/${tmdbId}?append_to_response=keywords`;
     const [details, credits] = await Promise.all([
-      tmdbFetch(`/${mediaType}/${tmdbId}`),
+      tmdbFetch(detailsPath),
       tmdbFetch(`/${mediaType}/${tmdbId}/credits`),
     ]);
     if (!details) return null;
@@ -111,6 +123,61 @@ async function getRecommendations(tmdbId, mediaType) {
   }
 }
 
+async function getSimilar(tmdbId, mediaType) {
+  try {
+    const json = await tmdbFetch(`/${mediaType}/${tmdbId}/similar?page=1`);
+    if (!json) return [];
+    return (json.results || []).slice(0, 20).map(r => ({
+      tmdbId: r.id,
+      mediaType,
+      title: r.title || r.name,
+      year: parseInt((r.release_date || r.first_air_date || '').slice(0, 4)) || 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// In-memory caches for person lookups (resets on server restart — acceptable)
+const _personIdCache = new Map();    // name -> tmdbPersonId | -1
+const _personCreditsCache = new Map(); // `${personId}:${mediaType}` -> candidates[]
+
+async function getPersonCandidates(name, mediaType) {
+  let personId = _personIdCache.get(name);
+  if (personId === undefined) {
+    try {
+      const json = await tmdbFetch(`/search/person?query=${encodeURIComponent(name)}&page=1`);
+      personId = json?.results?.[0]?.id ?? -1;
+    } catch {
+      personId = -1;
+    }
+    _personIdCache.set(name, personId);
+  }
+  if (personId === -1) return [];
+
+  const cacheKey = `${personId}:${mediaType}`;
+  if (_personCreditsCache.has(cacheKey)) return _personCreditsCache.get(cacheKey);
+
+  try {
+    const creditsKey = mediaType === 'movie' ? 'movie_credits' : 'tv_credits';
+    const json = await tmdbFetch(`/person/${personId}/${creditsKey}`);
+    const results = (json?.cast || [])
+      .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+      .slice(0, 20)
+      .map(r => ({
+        tmdbId: r.id,
+        mediaType,
+        title: r.title || r.name,
+        year: parseInt((r.release_date || r.first_air_date || '').slice(0, 4)) || 0,
+      }));
+    _personCreditsCache.set(cacheKey, results);
+    return results;
+  } catch {
+    _personCreditsCache.set(cacheKey, []);
+    return [];
+  }
+}
+
 // Discover movies/TV by genre IDs, sorted by popularity (not vote_average — avoids returning
 // all-time classics that are almost certainly already in the library)
 async function discoverByGenreIds(mediaType, genreIds, page = 1) {
@@ -118,7 +185,7 @@ async function discoverByGenreIds(mediaType, genreIds, page = 1) {
   try {
     const genreParam = genreIds.join(',');
     const json = await tmdbFetch(
-      `/discover/${mediaType}?with_genres=${genreParam}&sort_by=popularity.desc&vote_average.gte=6.5&vote_count.gte=50&page=${page}`
+      `/discover/${mediaType}?with_genres=${genreParam}&sort_by=popularity.desc&vote_average.gte=6.5&vote_count.gte=50&include_adult=false&page=${page}`
     );
     if (!json) return [];
     return (json.results || []).map(r => ({
@@ -136,7 +203,7 @@ async function discoverByGenreIds(mediaType, genreIds, page = 1) {
 async function discoverAnime(page = 1) {
   try {
     const json = await tmdbFetch(
-      `/discover/tv?with_genres=16&with_origin_country=JP&sort_by=popularity.desc&vote_average.gte=6.5&vote_count.gte=50&page=${page}`
+      `/discover/tv?with_genres=16&with_origin_country=JP&sort_by=popularity.desc&vote_average.gte=6.5&vote_count.gte=50&include_adult=false&page=${page}`
     );
     if (!json) return [];
     return (json.results || []).map(r => ({
@@ -153,7 +220,7 @@ async function discoverAnime(page = 1) {
 // Trending movies or TV this week
 async function getTrending(mediaType) {
   try {
-    const json = await tmdbFetch(`/trending/${mediaType}/week?page=1`);
+    const json = await tmdbFetch(`/trending/${mediaType}/week?page=1&include_adult=false`);
     if (!json) return [];
     return (json.results || []).map(r => ({
       tmdbId: r.id,
@@ -208,7 +275,8 @@ const TV_GENRE_MAP = {
 };
 
 module.exports = {
-  getItemDetails, getRecommendations, discoverByGenreIds, discoverAnime, getTrending,
+  getItemDetails, getRecommendations, getSimilar, getPersonCandidates,
+  discoverByGenreIds, discoverAnime, getTrending,
   batchGetDetails, testApiKey, posterUrl,
   MOVIE_GENRE_MAP, TV_GENRE_MAP,
 };

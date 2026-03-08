@@ -1,9 +1,10 @@
 const plexService = require('./plex');
 const tautulliService = require('./tautulli');
+const tmdbService = require('./tmdb');
 const db = require('../db/database');
 
 // Signal type priority for reason display — genre always shows after specific signals
-const SIGNAL_TYPE_RANK = { director: 0, actor: 1, studio: 2, rating: 3, new: 4, genre: 99 };
+const SIGNAL_TYPE_RANK = { collection: 0, director: 1, similar: 2, actor: 3, keyword: 4, studio: 5, rating: 6, new: 7, genre: 99 };
 
 function getMoviesSection() { return db.getSetting('plex_movies_section', null) || process.env.PLEX_MOVIES_SECTION_ID || '1'; }
 function getTvSection()     { return db.getSetting('plex_tv_section', null)     || process.env.PLEX_TV_SECTION_ID     || '2'; }
@@ -111,16 +112,75 @@ async function buildPreferenceProfile(userId, libraryMap) {
   const tier1 = new Set(byRecency.slice(0, 30).map(h => h.rating_key));
   const tier2 = new Set(byRecency.slice(30, 100).map(h => h.rating_key));
 
-  const genreWeights    = new Map();
-  const directorWeights = new Map();
-  const actorWeights    = new Map();
-  const studioWeights   = new Map();
-  const decadeWeights   = new Map();
+  const genreWeights      = new Map();
+  const directorWeights   = new Map();
+  const actorWeights      = new Map();
+  const studioWeights     = new Map();
+  const decadeWeights     = new Map();
+  const keywordWeights    = new Map();
+  const collectionWeights = new Map(); // tmdb collection id -> weight
 
   // Trigger tracking: for each signal key, the watched item that contributed most weight
   const directorTriggers = new Map(); // director -> { title, weight, isHighlyRated }
   const actorTriggers    = new Map();
   const studioTriggers   = new Map();
+
+  // Pre-fetch TMDB keywords for top 60 watched items (all cached after first run)
+  const seenForKeywords = new Set();
+  const keywordFetchList = [];
+  for (const entry of byRecency) {
+    if (seenForKeywords.has(entry.rating_key)) continue;
+    seenForKeywords.add(entry.rating_key);
+    const item = libraryMap.get(entry.rating_key);
+    if (item?.tmdbId) keywordFetchList.push(item);
+    if (keywordFetchList.length >= 60) break;
+  }
+  const keywordMap    = new Map(); // ratingKey -> string[]
+  const collectionMap = new Map(); // ratingKey -> collectionId
+  await Promise.all(keywordFetchList.map(async item => {
+    const mt = item.type === 'movie' ? 'movie' : 'tv';
+    const details = await tmdbService.getItemDetails(item.tmdbId, mt).catch(() => null);
+    if (!details) return;
+    if (details.keywords?.length) keywordMap.set(item.ratingKey, details.keywords);
+    if (details.collection) collectionMap.set(item.ratingKey, details.collection);
+  }));
+
+  // Fetch TMDB recommendations + similar for top 20 watched items.
+  // Seeds are ranked by recency × star-rating so a loved film outranks a recent-but-meh one.
+  // sourceTitle = the seed with highest importance (shown as "Similar to X").
+  // Keys stored as Numbers to match TMDB API response types.
+  const seedsWithImportance = keywordFetchList.map((seedItem, idx) => {
+    const recency = idx < 5 ? 3 : idx < 10 ? 2 : 1;
+    const starRating = userRatings.get(seedItem.ratingKey) || 0;
+    const starMult = starRating >= 9 ? 2.5 : starRating >= 7 ? 2.0 : starRating >= 5 ? 1.5 : 1.0;
+    return { item: seedItem, importance: recency * starMult };
+  });
+  seedsWithImportance.sort((a, b) => b.importance - a.importance);
+  const similarSeeds = seedsWithImportance.slice(0, 20).map(s => s.item);
+  const seedImportanceMap = new Map(seedsWithImportance.map(s => [s.item.ratingKey, s.importance]));
+
+  const tmdbSimilarMap = new Map();
+  await Promise.all(similarSeeds.map(async item => {
+    const mt = item.type === 'movie' ? 'movie' : 'tv';
+    const seedWeight = seedImportanceMap.get(item.ratingKey) || 1;
+    const [recs, similar] = await Promise.all([
+      tmdbService.getRecommendations(item.tmdbId, mt).catch(() => []),
+      tmdbService.getSimilar(item.tmdbId, mt).catch(() => []),
+    ]);
+    for (const r of [...recs, ...similar]) {
+      const rid = Number(r.tmdbId);
+      const existing = tmdbSimilarMap.get(rid);
+      if (existing) {
+        existing.weight += seedWeight;
+        if (seedWeight > (existing._bestWeight || 0)) {
+          existing.sourceTitle = item.title;
+          existing._bestWeight = seedWeight;
+        }
+      } else {
+        tmdbSimilarMap.set(rid, { weight: seedWeight, sourceTitle: item.title, _bestWeight: seedWeight });
+      }
+    }
+  }));
 
   for (const entry of history) {
     const item = libraryMap.get(entry.rating_key);
@@ -176,40 +236,80 @@ async function buildPreferenceProfile(userId, libraryMap) {
       const decade = `${Math.floor(item.year / 10) * 10}s`;
       decadeWeights.set(decade, (decadeWeights.get(decade) || 0) + weight);
     }
+
+    // Keywords (from TMDB pre-fetch)
+    for (const kw of (keywordMap.get(entry.rating_key) || [])) {
+      keywordWeights.set(kw, (keywordWeights.get(kw) || 0) + weight);
+    }
+
+    // Collection/franchise (from TMDB pre-fetch)
+    const collectionId = collectionMap.get(entry.rating_key);
+    if (collectionId) {
+      collectionWeights.set(collectionId, (collectionWeights.get(collectionId) || 0) + weight * 3);
+    }
   }
 
   return {
-    genreWeights:    normalizeMap(genreWeights),
-    directorWeights: normalizeMap(directorWeights),
-    actorWeights:    normalizeMap(actorWeights),
-    studioWeights:   normalizeMap(studioWeights),
-    decadeWeights:   normalizeMap(decadeWeights),
+    genreWeights:      normalizeMap(genreWeights),
+    directorWeights:   normalizeMap(directorWeights),
+    actorWeights:      normalizeMap(actorWeights),
+    studioWeights:     normalizeMap(studioWeights),
+    decadeWeights:     normalizeMap(decadeWeights),
+    keywordWeights:    normalizeMap(keywordWeights),
+    collectionWeights: normalizeMap(collectionWeights),
+    tmdbSimilarMap,
     directorTriggers,
     actorTriggers,
     studioTriggers,
   };
 }
 
+// Genre names that look like titles rather than real genres are filtered out.
+// A genre is considered real if it's short (≤20 chars) and ≤3 words.
+function isRealGenre(g) {
+  return g.length <= 20 && g.split(' ').length <= 3;
+}
+
 /**
  * Score an unwatched, non-dismissed item against the preference profile.
  *
  * Scoring budget:
- *   Director  30pts  — highest-confidence taste signal
- *   Actor     25pts  — accumulates from multiple cast matches
- *   Genre     20pts  — still important but capped so it can't drown everything
- *   Studio    15pts  — A24, Ghibli, HBO etc.
- *   Decade    8pts
+ *   Collection 30pts — same franchise/series
+ *   Director   30pts — highest-confidence taste signal
+ *   Actor      25pts — accumulates from multiple cast matches
+ *   Keywords   25pts — theme/plot similarity
+ *   Studio     20pts — A24, Ghibli, HBO etc.
+ *   Genre      15pts — supporting signal, capped so it can't dominate
+ *   Decade      8pts
  *   Audience rating ≥ 8.5: +5, ≥ 7.5: +2
  *   Recently added (7 days): +3
  */
-function scoreItem(item, profile, dismissedKeys, watchedKeys) {
+function scoreItem(item, profile, dismissedKeys, watchedKeys, tmdbEnrich) {
   if (dismissedKeys.has(item.ratingKey)) return null;
   if (watchedKeys.has(item.ratingKey)) return null;
 
   const { genreWeights, directorWeights, actorWeights, studioWeights, decadeWeights,
+          keywordWeights, collectionWeights, tmdbSimilarMap,
           directorTriggers, actorTriggers, studioTriggers } = profile;
 
   const signals = []; // { pts, reason, type }
+
+  // ── TMDB Similarity (max 40pts) ───────────────────────────────────────────
+  // TMDB's own recommendation/similar engine cross-referenced against your library.
+  // Weight = sum of how many watched titles point here (higher-recency seeds count more).
+  // Plex tmdbId is a string; TMDB API returns numbers — normalise both to Number.
+  let similarPts = 0;
+  const rawTmdbId = tmdbEnrich?.tmdbId ?? item.tmdbId ?? null;
+  const numericTmdbId = rawTmdbId ? Number(rawTmdbId) : null;
+  if (numericTmdbId && tmdbSimilarMap) {
+    const entry = tmdbSimilarMap.get(numericTmdbId);
+    if (entry) {
+      similarPts = Math.min(entry.weight * 8, 40);
+      if (similarPts > 3) {
+        signals.push({ pts: similarPts, reason: `Similar to ${entry.sourceTitle}`, type: 'similar' });
+      }
+    }
+  }
 
   // ── Director (max 30pts) ──────────────────────────────────────────────────
   let dirPts = 0, topDir = null, dirTrigger = null;
@@ -225,19 +325,21 @@ function scoreItem(item, profile, dismissedKeys, watchedKeys) {
     signals.push({ pts: dirPts, reason, type: 'director' });
   }
 
-  // ── Actor (max 25pts) ─────────────────────────────────────────────────────
+  // ── Actor (max 35pts) ─────────────────────────────────────────────────────
+  // Each matching cast member contributes w*15; multiple matches stack.
+  // Cap raised to 35 — seeing 3 films with the same actor is a strong signal.
   let actPts = 0, topActor = null, actTrigger = null;
   for (const a of item.cast.slice(0, 10)) {
     const w = actorWeights.get(a) || 0;
-    if (w > 0) {
-      actPts += w * 7;
+    if (w > 0.1) {  // require actor to be a meaningful pattern, not a one-off
+      actPts += w * 15;
       if (!topActor || w > (actorWeights.get(topActor) || 0)) {
         topActor = a;
         actTrigger = actorTriggers.get(a);
       }
     }
   }
-  actPts = Math.min(actPts, 25);
+  actPts = Math.min(actPts, 35);
   if (actPts > 3) {
     const reason = (actTrigger?.isHighlyRated)
       ? `Because you loved ${actTrigger.title}`
@@ -245,30 +347,67 @@ function scoreItem(item, profile, dismissedKeys, watchedKeys) {
     signals.push({ pts: actPts, reason, type: 'actor' });
   }
 
-  // ── Genre (max 20pts, each genre capped at 7pts to prevent single-genre flood) ──
+  // ── Genre (max 8pts, tiebreaker only) ───────────────────────────────────────
+  // Genre reason only shown when no other signal exists at all — prevents "Because you
+  // like Comedy" from crowding out actor/director/similar which are far more personal.
   let genrePts = 0;
   const matchedGenres = [];
   for (const g of item.genres) {
     const w = genreWeights.get(g) || 0;
-    genrePts += Math.min(w * 7, 7);
-    if (w > 0.2) matchedGenres.push({ g, w });
+    genrePts += Math.min(w * 4, 4);
+    if (w > 0.35 && isRealGenre(g)) matchedGenres.push({ g, w });
   }
-  genrePts = Math.min(genrePts, 20);
-  if (genrePts > 2 && matchedGenres.length > 0) {
-    matchedGenres.sort((a, b) => b.w - a.w);
-    signals.push({ pts: genrePts, reason: `Because you like ${matchedGenres[0].g}`, type: 'genre' });
+  genrePts = Math.min(genrePts, 8);
+
+  // ── Keywords (max 25pts) ──────────────────────────────────────────────────
+  let kwPts = 0, topKw = null;
+  const enrichKeywords = tmdbEnrich?.keywords || [];
+  for (const kw of enrichKeywords) {
+    const w = keywordWeights?.get(kw) || 0;
+    if (w > 0.1) {
+      kwPts += Math.min(w * 5, 5);
+      if (!topKw || w > (keywordWeights.get(topKw) || 0)) topKw = kw;
+    }
+  }
+  kwPts = Math.min(kwPts, 25);
+  if (kwPts > 3) {
+    signals.push({ pts: kwPts, reason: `Matches themes you enjoy`, type: 'keyword' });
   }
 
-  // ── Studio (max 15pts) ────────────────────────────────────────────────────
+  // ── Collection/franchise (max 30pts) ──────────────────────────────────────
+  let collectionPts = 0;
+  const enrichCollection = tmdbEnrich?.collection || null;
+  if (enrichCollection && collectionWeights) {
+    collectionPts = Math.min((collectionWeights.get(enrichCollection) || 0) * 30, 30);
+    if (collectionPts > 5) {
+      signals.push({ pts: collectionPts, reason: `Part of a series you watch`, type: 'collection' });
+    }
+  }
+
+  // ── Studio (max 10pts, supporting context only) ────────────────────────────
   let studioPts = 0;
   if (item.studio) {
-    studioPts = Math.min((studioWeights.get(item.studio) || 0) * 15, 15);
-    if (studioPts > 2) {
+    studioPts = Math.min((studioWeights.get(item.studio) || 0) * 10, 10);
+    // Only show studio as a supporting reason, not the headline
+    const hasPersonalSignal = signals.some(s => ['similar', 'director', 'actor', 'keyword', 'collection'].includes(s.type));
+    if (studioPts > 3 && hasPersonalSignal) {
       const t = studioTriggers.get(item.studio);
-      const reason = (t?.isHighlyRated)
-        ? `Because you loved ${t.title}`
-        : `More from ${item.studio}`;
+      const reason = (t?.isHighlyRated) ? `Because you loved ${t.title}` : `More from ${item.studio}`;
       signals.push({ pts: studioPts, reason, type: 'studio' });
+    }
+  }
+
+  // ── Genre (max 8pts) ──────────────────────────────────────────────────────
+  // Show genre reason only if fewer than 2 personal signals already exist,
+  // and require a meaningful rating (keeps some genre variety without flooding).
+  {
+    const personalCount = signals.filter(s => ['similar', 'director', 'actor', 'keyword', 'collection'].includes(s.type)).length;
+    if (genrePts > 2 && matchedGenres.length > 0 && personalCount < 2) {
+      matchedGenres.sort((a, b) => b.w - a.w);
+      // Prefer high-rated genre picks — suppress genre reason if item is mediocre
+      if (item.audienceRating >= 7.0 || personalCount === 0) {
+        signals.push({ pts: genrePts, reason: `Because you like ${matchedGenres[0].g}`, type: 'genre' });
+      }
     }
   }
 
@@ -280,15 +419,20 @@ function scoreItem(item, profile, dismissedKeys, watchedKeys) {
   }
 
   // ── Bonuses ───────────────────────────────────────────────────────────────
-  const ratingBonus = item.audienceRating >= 8.5 ? 5
-                    : item.audienceRating >= 7.5 ? 2 : 0;
-  if (ratingBonus >= 5) signals.push({ pts: ratingBonus, reason: 'Highly Rated', type: 'rating' });
+  // Rating is a tiebreaker only — small pts, and reason only shown when no
+  // specific signals exist (so "Highly Rated" never crowds out actor/director).
+  const ratingBonus = item.audienceRating >= 9.0 ? 3
+                    : item.audienceRating >= 8.0 ? 1 : 0;
+  const hasAnySpecific = signals.some(s => s.type !== 'genre');
+  if (ratingBonus >= 3 && !hasAnySpecific) {
+    signals.push({ pts: ratingBonus, reason: 'Highly Rated', type: 'rating' });
+  }
 
   const sevenDaysAgo = Math.floor(Date.now() / 1000) - 7 * 86400;
   const newBonus = (item.addedAt && item.addedAt > sevenDaysAgo) ? 3 : 0;
   if (newBonus) signals.push({ pts: newBonus, reason: 'Recently Added', type: 'new' });
 
-  const score = dirPts + actPts + genrePts + studioPts + decadePts + ratingBonus + newBonus;
+  const score = similarPts + dirPts + actPts + kwPts + collectionPts + genrePts + studioPts + decadePts + ratingBonus + newBonus;
 
   // Sort signals: specific signals (director/actor/studio/rating) always before genre,
   // so "Because you like Comedy" never crowds out "Directed by X" or "Starring Y"
@@ -401,6 +545,26 @@ async function getRecommendations(userId, userToken) {
       !item.genres.some(g => g.toLowerCase() === 'anime')
     );
 
+    // Build TMDB enrich map. Keywords/collection from DB cache (no new calls).
+    // Similar score comes from tmdbSimilarMap built during profile construction.
+    const tmdbEnrichMap = new Map();
+    for (const item of [...movies, ...tv]) {
+      if (!item.tmdbId) continue;
+      const mt = item.type === 'movie' ? 'movie' : 'tv';
+      const cached = db.getTmdbCache(item.tmdbId, mt);
+      const similarEntry = profile?.tmdbSimilarMap?.get(item.tmdbId);
+      if (cached || similarEntry) {
+        tmdbEnrichMap.set(item.ratingKey, {
+          tmdbId: item.tmdbId,
+          keywords: cached?.keywords || [],
+          collection: cached?.collection || null,
+        });
+      } else if (item.tmdbId) {
+        // Always pass tmdbId so similarPts lookup works even without cache
+        tmdbEnrichMap.set(item.ratingKey, { tmdbId: item.tmdbId, keywords: [], collection: null });
+      }
+    }
+
     let scoredMovies, scoredTV, scoredAnime;
 
     if (!profile) {
@@ -410,13 +574,13 @@ async function getRecommendations(userId, userToken) {
       scoredAnime = animeItems.map(i => scoreFallback(i, dismissedKeys, watchedKeys)).filter(Boolean);
     } else {
       scoredMovies = movies
-        .map(item => scoreItem(item, profile, dismissedKeys, watchedKeys))
+        .map(item => scoreItem(item, profile, dismissedKeys, watchedKeys, tmdbEnrichMap.get(item.ratingKey)))
         .filter(Boolean);
       scoredTV = tvOnlyItems
-        .map(item => scoreItem(item, profile, dismissedKeys, watchedKeys))
+        .map(item => scoreItem(item, profile, dismissedKeys, watchedKeys, tmdbEnrichMap.get(item.ratingKey)))
         .filter(Boolean);
       scoredAnime = animeItems
-        .map(item => scoreItem(item, profile, dismissedKeys, watchedKeys))
+        .map(item => scoreItem(item, profile, dismissedKeys, watchedKeys, tmdbEnrichMap.get(item.ratingKey)))
         .filter(Boolean);
     }
 
