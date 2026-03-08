@@ -39,12 +39,61 @@ window.Watchlist = (function () {
     return res.json();
   }
 
+  // ── Mobile confirm popup ──────────────────────────────────────────
+  function mobileConfirm(title, onConfirm, onCancel) {
+    var existing = document.getElementById('wl-confirm');
+    if (existing) existing.remove();
+
+    var popup = document.createElement('div');
+    popup.id = 'wl-confirm';
+    popup.className = 'wl-confirm';
+    popup.innerHTML =
+      '<div class="wl-confirm-box">' +
+        '<p class="wl-confirm-title">Add to Watchlist?</p>' +
+        '<p class="wl-confirm-name">' + title + '</p>' +
+        '<div class="wl-confirm-btns">' +
+          '<button class="wl-confirm-cancel">Cancel</button>' +
+          '<button class="wl-confirm-ok">Add</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(popup);
+
+    function close() { popup.remove(); }
+
+    popup.querySelector('.wl-confirm-ok').addEventListener('click', function () {
+      close(); onConfirm();
+    });
+    popup.querySelector('.wl-confirm-cancel').addEventListener('click', function () {
+      close(); onCancel();
+    });
+    popup.addEventListener('click', function (e) {
+      if (e.target === popup) { close(); onCancel(); }
+    });
+  }
+
+  var isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+
   /**
    * Toggle watchlist status for a card.
    * btn: the watchlist button element
    * item: the recommendation item object
    */
   async function toggle(btn, item) {
+    // On mobile, confirm before adding (not needed for removing)
+    if (isTouchDevice && !item.isInWatchlist) {
+      btn.disabled = true;
+      mobileConfirm(
+        item.title || 'this title',
+        function () { doToggle(btn, item); },
+        function () { btn.disabled = false; }
+      );
+      return;
+    }
+    doToggle(btn, item);
+  }
+
+  async function doToggle(btn, item) {
     btn.disabled = true;
     try {
       if (item.isInWatchlist) {
@@ -69,5 +118,5 @@ window.Watchlist = (function () {
     }
   }
 
-  return { add, remove, toggle };
+  return { add, remove, toggle, doToggle };
 })();

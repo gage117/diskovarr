@@ -84,7 +84,10 @@ router.get('/check-pin', checkPinLimiter, async (req, res) => {
     const serverToken = serverResource.accessToken || userToken;
     console.log(`[auth] user ${userData.id} serverToken=${serverToken ? 'found' : 'missing (fallback to userToken)'}`);
 
-    const username = userData.username || userData.friendlyName || 'Plex User';
+    const rawName = userData.username || userData.friendlyName || 'Plex User';
+    const username = rawName.replace(/&#(\d+);/g, (_, c) => String.fromCharCode(c))
+                            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+                            .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
     const thumb = userData.thumb || null;
 
     // Persist username so admin panel can show names instead of IDs

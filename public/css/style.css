@@ -1325,6 +1325,62 @@ img {
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(100, 160, 255, 0.25);
 }
 
+/* ── Mobile watchlist confirm popup ──────────────────────────────────────── */
+.wl-confirm {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 9999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.wl-confirm-box {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  padding: 24px 20px 32px;
+  width: 100%;
+  max-width: 480px;
+}
+.wl-confirm-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+.wl-confirm-name {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin: 0 0 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wl-confirm-btns {
+  display: flex;
+  gap: 10px;
+}
+.wl-confirm-cancel,
+.wl-confirm-ok {
+  flex: 1;
+  padding: 13px;
+  border-radius: 10px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wl-confirm-cancel {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.wl-confirm-ok {
+  background: var(--accent);
+  color: #000;
+}
+
 /* ── Watchlist page ───────────────────────────────────────────────────────── */
 .watchlist-empty {
   text-align: center;
