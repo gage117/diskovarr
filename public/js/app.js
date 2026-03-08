@@ -206,7 +206,7 @@
     dismissBtn.textContent = '✕ Not Interested';
     dismissBtn.addEventListener('click', function () {
       const card = document.querySelector('[data-rating-key="' + item.ratingKey + '"]');
-      if (card) handleDismiss(card, item.ratingKey);
+      if (card) handleDismiss(card, item.ratingKey, item.title);
       closeModal();
     });
     actionsEl.appendChild(dismissBtn);
@@ -298,7 +298,7 @@
     dismissBtn.title = "Don't show this again";
     dismissBtn.addEventListener('click', function (e) {
       e.stopPropagation();
-      handleDismiss(card, item.ratingKey);
+      handleDismiss(card, item.ratingKey, item.title);
     });
 
     actions.appendChild(wlBtn);
@@ -365,7 +365,20 @@
   // Dismiss
   // ----------------------------------------------------------------
 
-  function handleDismiss(cardEl, ratingKey) {
+  function handleDismiss(cardEl, ratingKey, title) {
+    if (window.Watchlist?.isTouchDevice()) {
+      window.Watchlist.mobileConfirm(
+        title || 'this title',
+        function () { doDismiss(cardEl, ratingKey); },
+        function () {},
+        { heading: 'Hide this title?', confirmLabel: 'Hide' }
+      );
+      return;
+    }
+    doDismiss(cardEl, ratingKey);
+  }
+
+  function doDismiss(cardEl, ratingKey) {
     cardEl.classList.add('card-dismissing');
     fetch('/api/dismiss', {
       method: 'POST',
@@ -374,9 +387,7 @@
     })
       .then(r => r.json())
       .then(() => {
-        setTimeout(() => {
-          cardEl.remove();
-        }, 300);
+        setTimeout(() => { cardEl.remove(); }, 300);
       })
       .catch(err => {
         console.error('Dismiss error:', err);

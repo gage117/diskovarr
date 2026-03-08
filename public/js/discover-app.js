@@ -19,6 +19,33 @@
     t._timer = setTimeout(function () { t.classList.remove('wl-toast-show'); }, 4000);
   }
 
+  // ── Mobile confirm (shared pattern with watchlist.js) ────────────────────
+  var isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+
+  function mobileConfirm(title, onConfirm, onCancel, opts) {
+    var heading = (opts && opts.heading) || 'Confirm';
+    var confirmLabel = (opts && opts.confirmLabel) || 'OK';
+    var existing = document.getElementById('wl-confirm');
+    if (existing) existing.remove();
+    var popup = document.createElement('div');
+    popup.id = 'wl-confirm';
+    popup.className = 'wl-confirm';
+    popup.innerHTML =
+      '<div class="wl-confirm-box">' +
+        '<p class="wl-confirm-title">' + heading + '</p>' +
+        '<p class="wl-confirm-name">' + title + '</p>' +
+        '<div class="wl-confirm-btns">' +
+          '<button class="wl-confirm-cancel">Cancel</button>' +
+          '<button class="wl-confirm-ok">' + confirmLabel + '</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(popup);
+    function close() { popup.remove(); }
+    popup.querySelector('.wl-confirm-ok').addEventListener('click', function () { close(); onConfirm(); });
+    popup.querySelector('.wl-confirm-cancel').addEventListener('click', function () { close(); onCancel(); });
+    popup.addEventListener('click', function (e) { if (e.target === popup) { close(); onCancel(); } });
+  }
+
   // ── Dismiss (Not Interested) ──────────────────────────────────────────────
 
   async function dismissItem(item, cardEl) {
@@ -409,7 +436,12 @@
     dismissCardBtn.title = 'Not Interested';
     dismissCardBtn.addEventListener('click', function (e) {
       e.stopPropagation();
-      dismissItem(item, card);
+      if (isTouchDevice) {
+        mobileConfirm(item.title || 'this title', function () { dismissItem(item, card); }, function () {},
+          { heading: 'Hide this title?', confirmLabel: 'Hide' });
+      } else {
+        dismissItem(item, card);
+      }
     });
     overlay.appendChild(dismissCardBtn);
     posterWrap.appendChild(overlay);

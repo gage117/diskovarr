@@ -40,7 +40,9 @@ window.Watchlist = (function () {
   }
 
   // ── Mobile confirm popup ──────────────────────────────────────────
-  function mobileConfirm(title, onConfirm, onCancel) {
+  function mobileConfirm(title, onConfirm, onCancel, opts) {
+    var heading = (opts && opts.heading) || 'Add to Watchlist?';
+    var confirmLabel = (opts && opts.confirmLabel) || 'Add';
     var existing = document.getElementById('wl-confirm');
     if (existing) existing.remove();
 
@@ -49,11 +51,11 @@ window.Watchlist = (function () {
     popup.className = 'wl-confirm';
     popup.innerHTML =
       '<div class="wl-confirm-box">' +
-        '<p class="wl-confirm-title">Add to Watchlist?</p>' +
+        '<p class="wl-confirm-title">' + heading + '</p>' +
         '<p class="wl-confirm-name">' + title + '</p>' +
         '<div class="wl-confirm-btns">' +
           '<button class="wl-confirm-cancel">Cancel</button>' +
-          '<button class="wl-confirm-ok">Add</button>' +
+          '<button class="wl-confirm-ok">' + confirmLabel + '</button>' +
         '</div>' +
       '</div>';
 
@@ -118,5 +120,5 @@ window.Watchlist = (function () {
     }
   }
 
-  return { add, remove, toggle, doToggle };
+  return { add, remove, toggle, doToggle, mobileConfirm, isTouchDevice: function() { return isTouchDevice; } };
 })();
